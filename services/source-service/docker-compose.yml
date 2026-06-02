@@ -1,0 +1,23 @@
+# Deploy on the VPS: `docker compose up -d --build`
+# FlareSolverr (real Chromium, solves Cloudflare) is internal-only; the
+# source-service talks to it over the private compose network.
+
+services:
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    restart: unless-stopped
+    environment:
+      - LOG_LEVEL=info
+      - TZ=Asia/Jakarta
+    # No published ports — only source-service reaches it internally.
+
+  source-service:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - FLARESOLVERR_URL=http://flaresolverr:8191/v1
+    ports:
+      - "8080:8080"
+    depends_on:
+      - flaresolverr
