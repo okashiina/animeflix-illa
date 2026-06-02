@@ -20,6 +20,15 @@ export interface EmbedProvider {
 
 export const embedProviders: EmbedProvider[] = [
   {
+    // Modern, actively-maintained player, AniList-keyed, verified frameable
+    // (no X-Frame-Options / CSP frame-ancestors as of 2026-06). Auto-selects
+    // sub/dub, so the dub flag is not part of the URL.
+    id: 'videasy',
+    name: 'Videasy',
+    dub: true,
+    build: (id, ep) => `https://player.videasy.net/anime/${id}/${ep}`,
+  },
+  {
     // Has several internal servers (lamda/primesrc/sigma/alfa/...) you can
     // switch between inside its own player UI — good last-line fallback.
     id: 'vidnest',
@@ -48,6 +57,25 @@ export const embedProviders: EmbedProvider[] = [
     dub: true,
     build: (id, ep, dub) =>
       `https://vidlink.pro/anime/${id}/${ep}/${dub ? 'dub' : 'sub'}`,
+  },
+  {
+    // AniList-keyed, HiAnime-library backed. Verified frameable: the embed host
+    // cdn.4animo.xyz sends `Content-Security-Policy: ... frame-ancestors *`.
+    id: '4animo',
+    name: '4Animo',
+    dub: true,
+    build: (id, ep, dub) =>
+      `https://cdn.4animo.xyz/api/embed/ani/${id}/${ep}/${
+        dub ? 'dub' : 'sub'
+      }?k=1`,
+  },
+  {
+    // AniList-keyed. Reported frameable but not fully verified — last-resort.
+    id: 'nhdapi',
+    name: 'NHDAPI',
+    dub: true,
+    build: (id, ep, dub) =>
+      `https://nhdapi.xyz/anime/${id}/${ep}/${dub ? 'dub' : 'sub'}`,
   },
 ];
 

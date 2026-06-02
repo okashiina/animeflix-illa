@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",
+    "aniwatch": "^2.27.9",
     "fastify": "^4.28.1",
     "lru-cache": "^10.4.3",
     "tsx": "^4.19.2"

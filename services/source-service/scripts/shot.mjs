@@ -19,13 +19,19 @@ async function waitForServer(url) {
 }
 
 async function main() {
-  console.log(`waiting for ${URL} ...`);
-  const up = await waitForServer(URL);
-  if (!up) {
-    console.log('server never came up');
-    process.exit(1);
+  // Only poll-wait for a local dev server; external URLs (embed providers) often
+  // don't return 200 to a bare Node fetch, so just navigate directly.
+  if (/127\.0\.0\.1|localhost/.test(URL)) {
+    console.log(`waiting for ${URL} ...`);
+    const up = await waitForServer(URL);
+    if (!up) {
+      console.log('server never came up');
+      process.exit(1);
+    }
+    console.log('server up, capturing...');
+  } else {
+    console.log(`capturing external ${URL} ...`);
   }
-  console.log('server up, capturing...');
   const browser = await chromium.launch({ headless: true, executablePath: EDGE });
   try {
     for (const vp of [
