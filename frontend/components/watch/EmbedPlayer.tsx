@@ -134,6 +134,11 @@ const EmbedPlayer: React.FC = () => {
           );
         })}
       </div>
+
+      <p className="text-xs text-faint">
+        Not playing? Some servers don&apos;t carry every title or episode. Try
+        another server above.
+      </p>
     </div>
   );
 };

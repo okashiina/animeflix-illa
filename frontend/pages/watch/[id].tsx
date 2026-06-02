@@ -198,7 +198,7 @@ const Watch = ({
             <h2 className="mb-3 font-display text-lg font-bold text-fg">
               Recommended
             </h2>
-            <div className="space-y-1">
+            <div className="space-y-2">
               {recommended.map((recommendation) => (
                 <RecommendationCard
                   anime={recommendation}

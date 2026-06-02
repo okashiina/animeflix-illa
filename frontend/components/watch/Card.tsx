@@ -17,22 +17,22 @@ const Card: React.FC<CardProps> = ({ anime }) => {
   return (
     <Link href={`/watch/${anime.id}`} passHref>
       <a className="group flex items-start gap-3 rounded-xl p-2 transition duration-200 hover:bg-surface/60">
-        {/* self-start so the flex row's stretch doesn't blow the poster up to full
-            card height (keeps the 2:3 thumbnail compact). */}
-        <div className="aspect-w-2 aspect-h-3 w-16 shrink-0 self-start">
-          <div className="overflow-hidden rounded-lg bg-surface ring-1 ring-line/40">
-            <Image
-              alt={`Cover for ${title}`}
-              src={anime.coverImage.large || anime.coverImage.medium}
-              layout="fill"
-              objectFit="cover"
-              className="transition duration-500 ease-out group-hover:scale-110"
-              placeholder="blur"
-              blurDataURL={`data:image/svg+xml;base64,${base64SolidImage(
-                anime.coverImage.color
-              )}`}
-            />
-          </div>
+        {/* Explicitly sized 2:3 thumbnail (96x64). We deliberately do NOT use the
+            @tailwindcss/aspect-ratio plugin here: its padding-bottom:150% resolves
+            against the containing block's width (the wide ~360px sidebar), not this
+            64px box, so it would balloon to ~540px tall inside the flex row. */}
+        <div className="relative h-24 w-16 shrink-0 overflow-hidden rounded-lg bg-surface ring-1 ring-line/40">
+          <Image
+            alt={`Cover for ${title}`}
+            src={anime.coverImage.large || anime.coverImage.medium}
+            layout="fill"
+            objectFit="cover"
+            className="transition duration-500 ease-out group-hover:scale-110"
+            placeholder="blur"
+            blurDataURL={`data:image/svg+xml;base64,${base64SolidImage(
+              anime.coverImage.color
+            )}`}
+          />
         </div>
 
         <div className="min-w-0 flex-1">
