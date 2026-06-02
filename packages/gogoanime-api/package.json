@@ -1,0 +1,17 @@
+{
+  "name": "gogoanime-api",
+  "version": "1.0.0",
+  "description": "Vendored GogoAnime scraper. Replaces github:riimuru/gogoanime, which was removed from GitHub by a DMCA takedown (the whole fork network is disabled). Keeps the exact lib/anime_parser + lib/types interface the api package imports.",
+  "license": "MIT",
+  "private": true,
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "dependencies": {
+    "axios": "^0.27.2",
+    "cheerio": "^1.0.0-rc.10",
+    "crypto-js": "^4.1.1"
+  }
+}
