@@ -66,6 +66,17 @@ export const getServerSideProps: GetServerSideProps<AnimeProps> = async (
   };
 };
 
+const EmptyState: React.FC<{ message: string }> = ({ message }) => (
+  <div className="mt-10 px-4 sm:px-6 lg:px-8">
+    <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-line/60 bg-surface/40 px-6 py-12 text-center">
+      <EmojiSadIcon className="h-10 w-10 text-faint" aria-hidden />
+      <p className="font-display text-lg font-semibold text-fg sm:text-xl">
+        {message}
+      </p>
+    </div>
+  </div>
+);
+
 const Anime = ({
   anime,
   recommended,
@@ -99,26 +110,22 @@ const Anime = ({
       <Header />
       <Banner anime={anime} />
 
-      {/* Don't show episode section if format is movie */}
-      {anime.format !== 'MOVIE' && episodes.episodeCount > 0 && (
-        <EpisodeSection anime={anime} episodes={episodes} />
-      )}
+      <main className="mx-auto w-full max-w-screen-2xl pb-20">
+        {/* Don't show episode section if format is movie */}
+        {anime.format !== 'MOVIE' && episodes.episodeCount > 0 && (
+          <EpisodeSection anime={anime} episodes={episodes} />
+        )}
 
-      {anime.format !== 'MOVIE' && episodes.episodeCount === 0 && (
-        <p className="mt-4 ml-3 flex items-center justify-center text-base font-semibold text-white sm:ml-6 sm:text-lg md:text-xl lg:text-2xl xl:text-3xl 2xl:text-4xl">
-          no episodes found
-          <EmojiSadIcon className="w-8" />
-        </p>
-      )}
+        {anime.format !== 'MOVIE' && episodes.episodeCount === 0 && (
+          <EmptyState message="No episodes found" />
+        )}
 
-      {recommended.length > 0 ? (
-        <Section animeList={recommended} title="Recommended" />
-      ) : (
-        <p className="mt-4 ml-3 flex items-center justify-center text-base font-semibold text-white sm:ml-6 sm:text-lg md:text-xl lg:text-2xl xl:text-3xl 2xl:text-4xl">
-          no recommendations found
-          <EmojiSadIcon className="w-8" />
-        </p>
-      )}
+        {recommended.length > 0 ? (
+          <Section animeList={recommended} title="Recommended" />
+        ) : (
+          <EmptyState message="No recommendations found" />
+        )}
+      </main>
     </>
   );
 };

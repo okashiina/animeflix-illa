@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 
 import { searchGenre } from '@animeflix/api';
 import { AnimeInfoFragment } from '@animeflix/api/aniList';
+import { CollectionIcon } from '@heroicons/react/outline';
 import { NextSeo } from 'next-seo';
 
 import Card from '@components/anime/Card';
@@ -41,21 +42,60 @@ const Genre = ({
 
   progressBar.finish();
 
+  const hasResults = searchResults.length > 0;
+  const genreText = typeof genre === 'string' ? genre : '';
+
   return (
     <>
       <NextSeo title={`Animes for Genre ${genre} | Animeflix`} />
 
       <Header />
 
-      <p className="mt-4 ml-3 text-base font-semibold text-white sm:ml-6 sm:text-lg md:text-xl lg:text-2xl xl:text-3xl 2xl:text-4xl">
-        Found {searchResults.length} results for Genre {genre}
-      </p>
+      <main className="mx-auto max-w-screen-2xl px-4 pb-16 sm:px-6 lg:px-8">
+        <header className="mt-8 animate-rise">
+          <p className="font-sans text-xs font-semibold uppercase tracking-[0.25em] text-accent">
+            Browse
+          </p>
+          <div className="mt-2 flex items-center gap-3">
+            <span
+              className="h-7 w-1 shrink-0 rounded-full bg-aurora"
+              aria-hidden
+            />
+            <h1 className="font-display text-2xl font-extrabold tracking-tight text-fg sm:text-3xl lg:text-4xl">
+              Genre <span className="font-normal text-faint">·</span>{' '}
+              <span className="text-accent">{genreText}</span>
+            </h1>
+          </div>
+          {hasResults && (
+            <p className="mt-2 pl-4 text-sm text-muted">
+              {searchResults.length}{' '}
+              {searchResults.length === 1 ? 'title' : 'titles'} found
+            </p>
+          )}
+        </header>
 
-      <div className="mt-2 grid grid-cols-2 place-items-center gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-        {searchResults.map((anime) => (
-          <Card key={anime.id} anime={anime} />
-        ))}
-      </div>
+        {hasResults ? (
+          <div className="mt-8 grid animate-rise grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] justify-items-center gap-4">
+            {searchResults.map((anime) => (
+              <Card key={anime.id} anime={anime} />
+            ))}
+          </div>
+        ) : (
+          <div className="mt-12 flex flex-col items-center justify-center rounded-2xl border border-line/50 bg-surface/40 px-6 py-16 text-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-2 text-faint">
+              <CollectionIcon className="h-7 w-7" aria-hidden />
+            </span>
+            <h2 className="mt-5 font-display text-xl font-bold text-fg">
+              Nothing here yet
+            </h2>
+            <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted">
+              We couldn&apos;t find any titles in{' '}
+              <span className="font-medium text-fg">{genreText}</span>. Try
+              another genre.
+            </p>
+          </div>
+        )}
+      </main>
     </>
   );
 };

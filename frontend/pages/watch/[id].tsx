@@ -141,65 +141,74 @@ const Watch = ({
 
       <Header />
 
-      <div className="space-x-4 sm:mt-4 lg:flex">
-        <div className="mx-auto max-w-[800px] flex-shrink-0 sm:p-4 lg:mx-0 lg:ml-4 lg:w-[65%] lg:max-w-full lg:p-0">
-          {/* render the embedded video player */}
-          <EmbedPlayer />
+      <main className="mx-auto w-full max-w-screen-2xl px-4 pb-20 pt-4 sm:px-6 lg:px-8">
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8">
+          {/* Player column */}
+          <div className="min-w-0">
+            <EmbedPlayer />
 
-          {/* the title of what anime is playing */}
-          <div className="flex w-full items-center justify-between">
-            <p className="m-2 mt-4 text-base font-semibold text-white sm:text-lg md:text-xl lg:text-2xl xl:text-3xl 2xl:text-4xl">
-              {`${anime.title.romaji || anime.title.english}${
-                anime.format !== 'MOVIE' ? ` | Episode ${episode}` : ''
-              }`}
-            </p>
-          </div>
-
-          {/* list of genres */}
-          <div className="mx-3 flex flex-wrap gap-x-1 gap-y-1 sm:gap-x-2">
-            {anime.genres.map((genre) => (
-              <Genre key={genre} genre={genre} />
-            ))}
-          </div>
-
-          {/* Info about the next airing episode */}
-          {nextAiringEpisode ? (
-            <div className="mt-2 p-2 text-gray-400">
-              {anime.title.romaji || anime.title.english} Episode{' '}
-              {nextAiringEpisode.episode} will release on the{' '}
-              {
-                <div className="inline-block font-bold text-gray-400">
-                  {convertToDate(nextAiringEpisode.airingAt * 1000)}.
-                </div>
-              }{' '}
-              Further episodes of the anime will air every{' '}
-              {convertToTime(nextAiringEpisode.airingAt * 1000)}.
+            <div className="mt-5">
+              {anime.format !== 'MOVIE' && (
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
+                  Episode {episode}
+                </p>
+              )}
+              <h1 className="mt-1 font-display text-2xl font-bold leading-tight text-fg sm:text-3xl">
+                {anime.title.romaji || anime.title.english}
+              </h1>
             </div>
-          ) : null}
 
-          <WatchControls />
+            {anime.genres?.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {anime.genres.map((genre) => (
+                  <Genre key={genre} genre={genre} />
+                ))}
+              </div>
+            )}
 
-          <Episode />
+            {nextAiringEpisode ? (
+              <p className="mt-4 rounded-xl border border-line/60 bg-surface/40 p-3 text-sm text-muted">
+                <span className="font-semibold text-fg">
+                  Episode {nextAiringEpisode.episode}
+                </span>{' '}
+                airs {convertToDate(nextAiringEpisode.airingAt * 1000)}. New
+                episodes air every{' '}
+                {convertToTime(nextAiringEpisode.airingAt * 1000)}.
+              </p>
+            ) : null}
 
-          {/* Anime decription */}
-          <p className="m-2 text-gray-400 line-clamp-6 md:line-clamp-none">
-            {anime.description.replace(/<\w*\\?>/g, '')}
-          </p>
+            <div className="mt-4">
+              <WatchControls />
+            </div>
+
+            <Episode />
+
+            <div className="mt-6">
+              <h2 className="font-display text-lg font-bold text-fg">
+                Synopsis
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted line-clamp-6 md:line-clamp-none">
+                {anime.description?.replace(/<\w*\\?>/g, '')}
+              </p>
+            </div>
+          </div>
+
+          {/* Recommendations */}
+          <aside className="mt-10 lg:mt-0">
+            <h2 className="mb-3 font-display text-lg font-bold text-fg">
+              Recommended
+            </h2>
+            <div className="space-y-1">
+              {recommended.map((recommendation) => (
+                <RecommendationCard
+                  anime={recommendation}
+                  key={recommendation.id}
+                />
+              ))}
+            </div>
+          </aside>
         </div>
-
-        {/* Anime recommendations */}
-        <div className="mx-auto">
-          <p className="text-base font-semibold text-white sm:text-lg md:text-xl lg:mt-0 lg:text-2xl xl:text-3xl 2xl:text-4xl">
-            Recommended animes
-          </p>
-          {recommended.map((recommendation) => (
-            <RecommendationCard
-              anime={recommendation}
-              key={recommendation.id}
-            />
-          ))}
-        </div>
-      </div>
+      </main>
     </>
   );
 };

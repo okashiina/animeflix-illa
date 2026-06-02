@@ -1,0 +1,28 @@
+<svg viewBox="0 0 124 124" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="pick" x1="22" y1="10" x2="96" y2="118" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF8AD0"/><stop offset="0.42" stop-color="#FF4D8D"/>
+      <stop offset="0.7" stop-color="#E0233E"/><stop offset="1" stop-color="#9B3BE0"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="40" y1="14" x2="58" y2="66" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="moeGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF7DC2"/><stop offset="0.55" stop-color="#FF4D8D"/><stop offset="1" stop-color="#A24CF0"/>
+    </linearGradient>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;700&amp;display=swap");
+      .word { font-family:'Comfortaa','Quicksand','Nunito',sans-serif; font-weight:700; }
+    </style>
+  </defs>
+    <path d="M30 17 C42 10 82 10 94 17 C110 26 116 43 111 60 C104 84 82 104 62 118 C42 104 20 84 13 60 C8 43 14 26 30 17 Z" fill="url(#pick)"/>
+    <path d="M30 17 C42 10 82 10 94 17 C108 25 115 40 112 55 C103 44 86 38 62 38 C44 38 30 43 21 51 C20 38 23 24 30 17 Z" fill="url(#shine)"/>
+    <ellipse cx="37" cy="72" rx="9" ry="5.5" fill="#ffffff" opacity="0.30"/>
+    <ellipse cx="87" cy="72" rx="9" ry="5.5" fill="#ffffff" opacity="0.30"/>
+    <ellipse cx="46" cy="62" rx="7" ry="9" fill="#2A0A2E"/>
+    <ellipse cx="78" cy="62" rx="7" ry="9" fill="#2A0A2E"/>
+    <circle cx="48.6" cy="58.2" r="2.6" fill="#ffffff"/>
+    <circle cx="80.6" cy="58.2" r="2.6" fill="#ffffff"/>
+    <path d="M54 81 Q58.5 87 62 82 Q65.5 87 70 81" fill="none" stroke="#2A0A2E" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M101 23 C101.6 28.4 104.4 31.2 109.8 31.8 C104.4 32.4 101.6 35.2 101 40.6 C100.4 35.2 97.6 32.4 92.2 31.8 C97.6 31.2 100.4 28.4 101 23 Z" fill="#FFE6F4"/>
+</svg>

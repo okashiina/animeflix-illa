@@ -101,22 +101,57 @@ Railway datacenter IPs are heavily challenged. Options, cheapest→most robust:
 ## 5. Phases & decision gates
 
 - **Phase 0 — DONE.** Embed switcher live = safety net.
-- **Phase 1 — PoC.** source-service skeleton: provider interface + **one** provider
-  (AllAnime via FlareSolverr) end-to-end on a VPS, + hls-proxy, + own player on a
-  test route. Gate: one popular title plays reliably for 48h.
+- **Phase 1 — PoC. PARTIALLY RUN (2026-06-02) → Option B parked, see below.**
+  source-service skeleton exists (provider interface + resolver + hls-proxy + embed
+  fallback). The AllAnime extractor was probed live (not yet implemented in-service).
 - **Phase 2 — Resilience.** Add 2–3 fallback providers + caching + circuit breakers
   + canary monitoring + `/status`. Gate: canary >95% green for a week.
 - **Phase 3 — Subtitles.** OpenSubtitles (id) → VTT, wired into our player.
-- **Phase 4 — UI redesign** using the chosen open-source player module.
+- **Phase 4 — UI redesign** (now prioritized FIRST — free, high-value, no source
+  dependency). Rebuild watch/home/browse UI in-repo on the existing embed playback,
+  using the mandatory UI/UX skills (CLAUDE.md). Player lib decided here.
+
+### 5a. Phase-1 PoC findings (2026-06-02) — decisive
+
+Ran from the user's own **residential** connection (not a datacenter IP):
+
+1. **Plain `fetch` → `api.allanime.day/api` = HTTP 403 Cloudflare "Just a moment…"
+   JS challenge.** (`services/source-service/scripts/probe-allanime.mjs`.)
+2. **A headed, Playwright-launched Edge stays stuck on the challenge** — Cloudflare
+   detects `navigator.webdriver`/automation.
+   (`scripts/poc-browser.mjs`.)
+3. **Even attaching to a normally-launched Edge over CDP (no automation flags) does
+   NOT clear** the managed challenge on a fresh profile.
+   (`scripts/poc-browser-cdp.mjs`.)
+
+**Conclusions:**
+- The blocker is **not IP reputation** (a residential IP 403s too) — so a residential
+  proxy does **not** fix AllAnime. It's a **JS/bot challenge**.
+- A vanilla automated browser is **detected**. Beating it reliably needs
+  **FlareSolverr-grade stealth** (undetected Chromium) running **on the same box/IP**
+  to mint a `cf_clearance` cookie (IP+UA-bound, ~30 min) → realistically **~2 GB RAM**.
+  That is the confirmed **"heavy" cost** (~Rp100k/mo VPS, or the user's own always-on PC).
+- The **embed switcher (Phase 0) sidesteps all of this for free** because it runs
+  client-side in the user's real browser (inherits its challenge-solving + IP).
+
+**DECISION:** Park Option B until there's a 2 GB box (VPS or always-on home PC running
+Docker+FlareSolverr). Do **Phase 4 (UI redesign) first** on the free embed playback.
+The source-service code stays in-repo, typechecking and ready to activate. To resume
+Option B later: stand up Docker + FlareSolverr, then implement
+`providers/allanime.ts` using the probe scripts above as the reference flow
+(search → episode → decode `sourceUrl` via XOR-56 → `clock.json` → m3u8/mp4).
 
 ---
 
 ## 6. Inputs (answered)
 
 - **Player base = this very project** (the fork). The UI redesign happens in-repo on
-  the existing Next.js frontend; there is no external player to import. Player lib
-  for the rebuilt watch view: **vidstack** or **artplayer** + `hls.js` (decide in
-  Phase 4). UI redesign work must use the mandatory UI/UX skills (see CLAUDE.md).
+  the existing Next.js frontend; there is no external player to import. Player lib for
+  the rebuilt watch view: **Vidstack (`@vidstack/react`) + `hls.js`** — DECIDED. It is
+  React-native (our stack), HLS-capable, has built-in skip-markers/PiP/keyboard/speed/
+  theater, and is what the best-reviewed competitor (Miruro) ships. See the field
+  survey + gap analysis in [COMPETITIVE-ANALYSIS.md](COMPETITIVE-ANALYSIS.md). UI
+  redesign work must use the mandatory UI/UX skills (see CLAUDE.md).
 - **Budget:** start with a ~$5–6/mo VPS (FlareSolverr fits in 2 GB RAM). Add a
   residential/ISP proxy only if a clean VPS IP still gets challenged — usage-based,
   roughly $2–10/mo for personal scale (route only the provider API/challenge through

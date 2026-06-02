@@ -10,25 +10,30 @@ export interface SectionProps {
 }
 
 const Section: React.FC<SectionProps> = ({ title, animeList }) => {
-  const animeListRef = useRef(null);
+  const animeListRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div>
-      <p className="mt-4 ml-3 text-base font-semibold text-white sm:ml-6 sm:text-lg md:text-xl lg:text-2xl xl:text-3xl 2xl:text-4xl">
-        {title}
-      </p>
-
-      <div
-        tabIndex={0}
-        className="mt-2 mb-8 ml-2 flex space-x-4 overflow-y-hidden overflow-x-scroll p-1 outline-none scrollbar-hide sm:ml-6"
-        ref={animeListRef}
-        onMouseEnter={() => animeListRef.current.focus()}
-      >
-        {animeList.map((anime) => (
-          <AnimeCard key={anime.id} anime={anime} />
-        ))}
+    <section className="mt-10 first:mt-8">
+      <div className="mb-3 flex items-center gap-2.5 px-4 sm:px-6 lg:px-8">
+        <span className="h-5 w-1 rounded-full bg-aurora" aria-hidden />
+        <h2 className="font-display text-xl font-bold tracking-tight text-fg sm:text-2xl">
+          {title}
+        </h2>
       </div>
-    </div>
+
+      <div className="edge-fade-x">
+        <div
+          tabIndex={0}
+          ref={animeListRef}
+          onMouseEnter={() => animeListRef.current?.focus()}
+          className="flex snap-x gap-4 overflow-x-auto overflow-y-hidden scroll-smooth px-4 pb-3 outline-none scrollbar-hide sm:px-6 lg:px-8"
+        >
+          {animeList.map((anime) => (
+            <AnimeCard key={anime.id} anime={anime} />
+          ))}
+        </div>
+      </div>
+    </section>
   );
 };
 

@@ -20,35 +20,36 @@ function MyApp({ Component, pageProps }: AppProps) {
   return (
     <>
       <DefaultSeo
-        title="Animeflix - Watch animes without ads"
-        description="Watch anime shows, tv, movies for free without ads on your mobile, tablet, or pc"
+        title="kessoku moe — watch anime free"
+        description="kessoku moe — stream anime shows, movies, and series free, ad-light, on your phone, tablet, or desktop. dark, gemoy, sedikit rock."
         additionalMetaTags={[
           {
             name: 'keywords',
-            content: 'watch animes, animes online, anime adsfree, adfree anime',
+            content:
+              'kessoku moe, watch anime free, anime streaming, anime online, ad-free anime, stream anime',
           },
           {
             name: 'theme-color',
-            content: '#0F0F0F',
+            content: '#0B0B14',
           },
           {
-            name: 'applie-mobile-web-app-capable',
+            name: 'apple-mobile-web-app-capable',
             content: 'yes',
           },
           {
             name: 'apple-mobile-web-app-status-bar-style',
-            content: '#0F0F0F',
+            content: '#0B0B14',
           },
         ]}
         twitter={{
           cardType: 'summary_large_image',
         }}
         openGraph={{
-          site_name: 'Animeflix',
+          site_name: 'kessoku moe',
           images: [
             {
-              url: '/preview.png',
-              alt: 'Site preview image',
+              url: '/kessoku-moe-appicon.svg',
+              alt: 'kessoku moe',
               type: 'large',
             },
           ],

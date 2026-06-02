@@ -4,10 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 
 import { AnimeBannerFragment, AnimeInfoFragment } from '@animeflix/api/aniList';
-import { ClockIcon, ThumbUpIcon } from '@heroicons/react/outline';
-import { PlayIcon } from '@heroicons/react/solid';
 
-import Icon from '@components/Icon';
 import { base64SolidImage } from '@utility/image';
 
 export interface CardProps {
@@ -15,42 +12,49 @@ export interface CardProps {
 }
 
 const Card: React.FC<CardProps> = ({ anime }) => {
+  const title = anime.title.english || anime.title.romaji;
+
   return (
     <Link href={`/watch/${anime.id}`} passHref>
-      <a className="ml-2 mr-4 flex transform space-x-4 py-2 text-white transition duration-300 ease-out hover:scale-105">
-        {/* Card Image */}
-        <div className="aspect-h-1 aspect-w-3 relative w-24 flex-shrink-0">
-          <Image
-            alt={anime.title.english || anime.title.romaji}
-            src={anime.coverImage.large || anime.coverImage.medium}
-            layout="fill"
-            objectFit="cover"
-            className="rounded-md"
-            placeholder="blur"
-            blurDataURL={`data:image/svg+xml;base64,${base64SolidImage(
-              anime.coverImage.color
-            )}`}
-          />
+      <a className="group flex items-start gap-3 rounded-xl p-2 transition duration-200 hover:bg-surface/60">
+        {/* self-start so the flex row's stretch doesn't blow the poster up to full
+            card height (keeps the 2:3 thumbnail compact). */}
+        <div className="aspect-w-2 aspect-h-3 w-16 shrink-0 self-start">
+          <div className="overflow-hidden rounded-lg bg-surface ring-1 ring-line/40">
+            <Image
+              alt={`Cover for ${title}`}
+              src={anime.coverImage.large || anime.coverImage.medium}
+              layout="fill"
+              objectFit="cover"
+              className="transition duration-500 ease-out group-hover:scale-110"
+              placeholder="blur"
+              blurDataURL={`data:image/svg+xml;base64,${base64SolidImage(
+                anime.coverImage.color
+              )}`}
+            />
+          </div>
         </div>
 
-        <div className="flex flex-col">
-          <p className="line-clamp-1">
-            {anime.title.english || anime.title.romaji}
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold leading-snug text-fg transition line-clamp-2 group-hover:text-accent">
+            {title}
           </p>
-
-          <p className="text-gray-400 line-clamp-2">
-            {anime.description.replace(/<\w*\\?>/g, '')}
-          </p>
-
-          <div className="m-4 flex justify-end space-x-2 text-xs text-white">
-            <Icon
-              icon={PlayIcon}
-              text={anime.format}
-              className="hidden sm:flex"
-            />
-            <Icon icon={ClockIcon} text={`${anime.duration} Min`} />
-            <Icon icon={ThumbUpIcon} text={`${anime.meanScore}%`} />
+          <div className="mt-1 flex items-center gap-2 text-xs text-faint">
+            {anime.format && <span>{anime.format}</span>}
+            {anime.meanScore && (
+              <>
+                <span aria-hidden className="opacity-50">
+                  •
+                </span>
+                <span>{anime.meanScore}%</span>
+              </>
+            )}
           </div>
+          {anime.description && (
+            <p className="mt-1 text-xs leading-relaxed text-muted line-clamp-2">
+              {anime.description.replace(/<\w*\\?>/g, '')}
+            </p>
+          )}
         </div>
       </a>
     </Link>

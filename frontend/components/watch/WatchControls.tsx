@@ -1,8 +1,7 @@
 import { AnyAction } from '@reduxjs/toolkit';
 
-import { setProvider, toggleDub } from '@store/slices/videoSettings';
+import { toggleDub } from '@store/slices/videoSettings';
 import { useDispatch, useSelector } from '@store/store';
-import { embedProviders } from '@utility/embedProviders';
 
 interface TogglerProps {
   label: string;
@@ -14,49 +13,29 @@ const Toggler: React.FC<TogglerProps> = ({ label, checked, action }) => {
   const dispatch = useDispatch();
 
   return (
-    <label className="p2 relative mr-2 flex items-center justify-between text-white">
+    <label className="flex cursor-pointer items-center gap-2.5 text-sm text-fg">
       {label}
       <input
         type="checkbox"
         checked={checked}
         onChange={() => dispatch(action)}
-        className="peer absolute left-0 top-0 h-full w-full appearance-none"
+        className="peer sr-only"
       />
       <span
-        className={`
-                  ml-2 flex h-5 w-9 flex-shrink-0 items-center
-                  rounded-full bg-gray-300 p-1
-                  after:h-4 after:w-4 after:rounded-full after:bg-gray-500 after:shadow-lg
-                  after:duration-300 peer-checked:bg-red-500 peer-checked:after:translate-x-3 peer-checked:after:bg-gray-800
-                `}
+        className="relative h-5 w-9 flex-shrink-0 rounded-full bg-surface-2 transition-colors duration-300 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-faint after:transition after:duration-300 peer-checked:bg-accent peer-checked:after:translate-x-4 peer-checked:after:bg-accent-ink peer-focus-visible:ring-2 peer-focus-visible:ring-accent/70"
+        aria-hidden
       />
     </label>
   );
 };
 
 const WatchControls: React.FC = () => {
-  const dispatch = useDispatch();
-  const provider = useSelector((store) => store.videoSettings.provider);
   const useDub = useSelector((store) => store.videoSettings.useDub);
 
   return (
-    <div className="m-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-      <Toggler label="Watch Dubbed?" checked={useDub} action={toggleDub()} />
-
-      <label className="flex items-center text-white">
-        Player:
-        <select
-          value={provider}
-          onChange={(e) => dispatch(setProvider(e.target.value))}
-          className="ml-2 rounded bg-gray-700 px-2 py-1 text-sm text-white outline-none"
-        >
-          {embedProviders.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </label>
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border border-line/60 bg-surface/40 p-3">
+      <span className="text-sm text-muted">Player</span>
+      <Toggler label="Dubbed" checked={useDub} action={toggleDub()} />
     </div>
   );
 };

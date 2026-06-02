@@ -45,3 +45,9 @@ yarn-error.log*
 
 # vercel
 .vercel/
+
+# kessoku moe brand kit — local reference only (logos the app uses are copied into frontend/public/)
+docs/kessoku moe brand guide/
+
+# scratch: PoC + screenshot artifacts
+services/source-service/scripts/*.png

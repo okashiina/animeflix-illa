@@ -1,9 +1,22 @@
 import { Html, Head, Main, NextScript } from 'next/document';
 
 const Document = () => (
-  <Html>
+  <Html lang="en">
     <Head>
+      {/* kessoku moe type: Comfortaa (display/wordmark) + Nunito (body). */}
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link
+        rel="preconnect"
+        href="https://fonts.gstatic.com"
+        crossOrigin="anonymous"
+      />
+      <link
+        href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;700&family=Nunito:wght@400;600;700;800&display=swap"
+        rel="stylesheet"
+      />
+
       <link rel="manifest" href="/site.webmanifest" />
+      <link rel="icon" href="/kessoku-moe-icon.svg" type="image/svg+xml" />
       <link rel="icon" type="image/x-icon" href="/favicon.ico" />
       <link
         rel="icon"
@@ -25,7 +38,7 @@ const Document = () => (
       <link
         rel="mask-icon"
         href="/icons/safari-pinned-tab.svg"
-        color="#5bbad5"
+        color="#FF4D8D"
       />
     </Head>
     <body>

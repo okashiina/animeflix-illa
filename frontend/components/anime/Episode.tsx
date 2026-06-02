@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 import { AnimeBannerFragment, AnimeInfoFragment } from '@animeflix/api/aniList';
 import { EpisodeInfoFragment } from '@animeflix/api/kitsu';
+import { PlayIcon } from '@heroicons/react/solid';
 
 export interface CardProps {
   anime: AnimeBannerFragment & AnimeInfoFragment;
@@ -11,37 +12,48 @@ export interface CardProps {
 }
 
 const Card: React.FC<CardProps> = ({ anime, number, episode }) => {
-  const title = episode ? episode.titles.canonical : `Episode No. ${number}`;
+  const title = episode ? episode.titles.canonical : `Episode ${number}`;
 
   return (
     <Link href={`/watch/${anime.id}?episode=${number}`} passHref>
-      <a className="w-64 transform cursor-pointer p-2 transition duration-300 ease-out hover:scale-105 sm:w-80">
-        <div className="relative">
-          <div className="aspect-w-3 aspect-h-2 relative w-64 sm:w-80">
+      <a className="group block w-64 shrink-0 snap-start sm:w-72">
+        {/* aspect-ratio plugin absolutely-positions the SINGLE direct child to fill,
+            so the image + overlays all live inside this one wrapper. */}
+        <div className="aspect-w-16 aspect-h-9 w-full">
+          {/* No `relative` here: the aspect-ratio plugin already anchors this child
+              with position:absolute. Adding `relative` collapses the box. */}
+          <div className="overflow-hidden rounded-2xl bg-surface shadow-card ring-1 ring-line/40 transition duration-300 ease-out group-hover:-translate-y-1 group-hover:shadow-lift group-hover:ring-2 group-hover:ring-accent/50">
             <Image
-              alt="Cover Image"
+              alt={`Thumbnail for ${title}`}
               src={
                 (episode && episode.thumbnail?.original.url) ||
                 anime.coverImage.large ||
                 anime.coverImage.medium ||
                 anime.bannerImage
               }
-              objectFit="cover"
               layout="fill"
+              objectFit="cover"
               objectPosition="center"
-              className="rounded-md"
+              className="transition duration-500 ease-out group-hover:scale-105"
             />
+
+            <div className="from-canvas/85 via-canvas/15 pointer-events-none absolute inset-0 bg-gradient-to-t to-transparent" />
+
+            <span className="bg-canvas/65 absolute left-2 top-2 rounded-full px-2 py-0.5 text-[11px] font-semibold text-fg backdrop-blur-sm">
+              EP {number}
+            </span>
+
+            <span className="absolute inset-0 flex items-center justify-center opacity-0 transition duration-300 group-hover:opacity-100">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-aurora text-accent-ink shadow-glow">
+                <PlayIcon className="ml-0.5 h-6 w-6" />
+              </span>
+            </span>
           </div>
-          <p className="absolute top-0 right-0 mt-2 h-12 text-xl font-bold text-white">
-            {number}
-          </p>
         </div>
 
-        <div>
-          <p className="mt-2 text-sm font-bold text-white line-clamp-2">
-            {title}
-          </p>
-        </div>
+        <p className="mt-2.5 text-sm font-semibold leading-snug text-fg transition line-clamp-2 group-hover:text-accent">
+          {title}
+        </p>
       </a>
     </Link>
   );

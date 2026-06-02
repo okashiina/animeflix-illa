@@ -3,16 +3,93 @@
 @tailwind utilities;
 
 @layer base {
-    /* Custom scrollbar */
-    ::-webkit-scrollbar {
-        @apply w-1;
-    }
+  /* kessoku moe tokens — OKLCH channels only ("L C H"), wrapped by Tailwind as
+     oklch(var(--token) / <alpha-value>) so opacity modifiers work.
+     Brand: Ink #0B0B14 surfaces, Hot Pink #FF4D8D accent, Stage Violet #9B3BE0 soft. */
+  :root {
+    --canvas: 0.13 0.02 290;
+    --canvas-2: 0.17 0.022 290;
+    --surface: 0.21 0.024 290;
+    --surface-2: 0.26 0.026 295;
+    --line: 0.34 0.03 300;
+    --fg: 0.965 0.006 300;
+    --muted: 0.78 0.02 300;
+    --faint: 0.6 0.025 300;
+    --accent: 0.68 0.21 358;
+    --accent-soft: 0.53 0.23 305;
+    --accent-ink: 0.99 0.01 350;
+    color-scheme: dark;
+  }
 
-    ::-webkit-scrollbar-thumb {
-        @apply bg-[#C3073F];
-    }
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
 
-    body {
-        @apply font-sans bg-black
-    }
+  body {
+    @apply bg-canvas font-sans text-fg antialiased;
+    min-height: 100dvh;
+    /* Atmospheric aurora: fixed radial glows at the top, low alpha so poster art wins. */
+    background-image:
+      radial-gradient(58% 48% at 82% -12%, oklch(var(--accent) / 0.2), transparent 70%),
+      radial-gradient(50% 42% at -5% -8%, oklch(var(--accent-soft) / 0.16), transparent 72%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+  }
+
+  /* Headings default to the display face. */
+  h1, h2, h3, h4 {
+    @apply font-display;
+  }
+
+  ::selection {
+    background-color: oklch(var(--accent) / 0.35);
+    color: oklch(var(--fg));
+  }
+
+  /* Visible, on-brand focus for keyboard users. */
+  :focus-visible {
+    outline: 2px solid oklch(var(--accent) / 0.85);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Slim accent scrollbar. */
+  ::-webkit-scrollbar {
+    @apply w-1.5 h-1.5;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: oklch(var(--accent) / 0.55);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: oklch(var(--accent) / 0.8);
+  }
+}
+
+@layer utilities {
+  /* Fade only the trailing edge of scrolling rails (hints "more to scroll") while
+     keeping the first card flush with the page gutter. */
+  .edge-fade-x {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      black calc(100% - 56px),
+      transparent
+    );
+    mask-image: linear-gradient(to right, black calc(100% - 56px), transparent);
+  }
+}
+
+/* Respect reduced-motion: kill all entrance/transition motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
