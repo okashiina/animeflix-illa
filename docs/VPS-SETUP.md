@@ -68,6 +68,30 @@ Ranked for *our* use case (cheap + Singapore region + beginner-friendly):
 - Want cheap + simple → **Contabo (Singapore)**.
 - Want the easiest possible first time, worth a few extra $ → **DigitalOcean (Singapore)**.
 
+### 4b. Indonesian providers (no international card — pay with bank transfer / QRIS / e-wallet)
+
+If international card signup fails (e.g. Oracle), use a **local Indonesian KVM VPS**.
+Lowest latency (Jakarta), local-language support, pay in Rupiah. Pick a **"Cloud VPS"
+/ "VPS KVM"** product (full root, Docker-capable) — **not** shared hosting.
+
+| Provider | Notes | From |
+| --- | --- | --- |
+| **DomaiNesia** (domainesia.com) | Beginner-friendly, good ID docs, full-root KVM | ~Rp48k/mo |
+| **Biznet Gio** (biznetgio.com) | Best network (Biznet backbone), explicitly Docker/K8s-ready | ~Rp50k/mo |
+| **Nevacloud** (nevacloud.com) | Cheap NVMe KVM | ~Rp42k/mo |
+| **Rumahweb / ArenHost / Natanetwork** | Cheap KVM, QRIS/OVO/DANA/GoPay | ~Rp40–50k/mo |
+
+> **IMPORTANT — RAM:** the cheapest tiers are usually **1 GB / 1 vCPU**, which is
+> **too small** (FlareSolverr launches Chromium → OOM). Pick a **2 GB+** plan even if
+> it costs more (realistically ~Rp80–150k/mo). OS image: **Ubuntu 24.04**.
+
+**My pick:** **DomaiNesia** (easiest + cheap + local payment) or **Biznet Gio** (best
+network) — choose a **2 GB plan, Ubuntu 24.04**. Whether a local datacenter IP passes
+Cloudflare is unknown until the PoC; that's exactly what Phase 1 tests.
+
+> Card-free alternative to the global hosts: **DigitalOcean and Vultr accept PayPal**
+> (no card), if you prefer their tooling over a local provider.
+
 ---
 
 ## 5. Step-by-step (using DigitalOcean as the example — others are nearly identical)
