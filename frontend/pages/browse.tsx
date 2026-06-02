@@ -421,7 +421,7 @@ const Browse = ({
         {/* Results */}
         {media.length > 0 ? (
           <>
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-4">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] justify-items-center gap-x-5 gap-y-8 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))]">
               {media.map((anime) => (
                 <Card key={anime.id} anime={anime as never} />
               ))}

@@ -1,37 +1,26 @@
 {
-  "name": "Animeflix",
-  "short_name": "Animeflix",
+  "name": "kessoku moe",
+  "short_name": "kessoku moe",
   "icons": [
     {
-      "src": "/icons/android-chrome-192x192.png",
+      "src": "/icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
-      "src": "/icons/android-chrome-512x512.png",
+      "src": "/icons/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ],
   "start_url": "/",
-  "background_color": "#0F0F0F",
+  "background_color": "#0B0B14",
   "display": "standalone",
   "display_override": ["fullscreen", "minimal-ui"],
   "scope": "/",
-  "theme_color": "#0F0F0F",
-  "description": "Watch anime shows, tv, movies for free without ads on your mobile, tablet, or pc",
-  "screenshots": [
-    {
-      "src": "/preview.png",
-      "type": "image/png",
-      "sizes": "1073x532"
-    }
-  ],
-  "orientation": "portrait",
-  "related_applications": [
-    {
-      "platform": "webapp",
-      "url": "https://aniflix.pro/site.webmanifest"
-    }
-  ]
+  "theme_color": "#0B0B14",
+  "description": "kessoku moe — watch anime free. dark, gemoy, sedikit rock.",
+  "orientation": "portrait"
 }

@@ -75,7 +75,7 @@ const Genre = ({
         </header>
 
         {hasResults ? (
-          <div className="mt-8 grid animate-rise grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] justify-items-center gap-4">
+          <div className="mt-8 grid animate-rise grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] justify-items-center gap-x-5 gap-y-8 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))]">
             {searchResults.map((anime) => (
               <Card key={anime.id} anime={anime} />
             ))}

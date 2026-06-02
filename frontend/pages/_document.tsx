@@ -16,7 +16,7 @@ const Document = () => (
       />
 
       <link rel="manifest" href="/site.webmanifest" />
-      <link rel="icon" href="/kessoku-moe-icon.svg" type="image/svg+xml" />
+      <link rel="icon" href="/kessoku-moe-appicon.svg" type="image/svg+xml" />
       <link rel="icon" type="image/x-icon" href="/favicon.ico" />
       <link
         rel="icon"
