@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 
 import { GetServerSideProps, InferGetServerSidePropsType } from 'next';
-import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 
 import { watchPage } from '@animeflix/api';
@@ -12,22 +11,15 @@ import Genre from '@components/Genre';
 import Header from '@components/Header';
 import progressBar from '@components/Progress';
 import RecommendationCard from '@components/watch/Card';
+import EmbedPlayer from '@components/watch/EmbedPlayer';
 import Episode from '@components/watch/Episode';
 import WatchControls from '@components/watch/WatchControls';
-import useVideoSources from '@hooks/useVideoSources';
 import { setAnime } from '@slices/anime';
 import { setEpisode } from '@slices/episode';
-import { setSources, setTotalEpisodes, resetSources } from '@slices/gogoApi';
-import { setProxy } from '@slices/videoSettings';
+import { setTotalEpisodes } from '@slices/gogoApi';
 import { initialiseStore, useDispatch, useSelector } from '@store/store';
 import { convertToDate, convertToTime } from '@utility/time';
-import { arrayToString, proxyUrl } from '@utility/utils';
-
-import { proxyFreeUrls } from '../../constants';
-
-const VideoPlayer = dynamic(() => import('@components/watch/VideoPlayer'), {
-  ssr: false,
-});
+import { arrayToString } from '@utility/utils';
 
 interface WatchProps {
   anime: AnimeInfoFragment & AnimeBannerFragment;
@@ -80,9 +72,6 @@ const Watch = ({
     store.anime.anime,
     store.episode.episode,
   ]);
-  const { useDub, useProxy } = useSelector((store) => store.videoSettings);
-  const videoLink = useSelector((store) => store.gogoApi.videoLink);
-
   const routerRef = useRef(router);
 
   useEffect(() => {
@@ -111,33 +100,15 @@ const Watch = ({
     );
   }, [animeId, episode]);
 
-  // get the videolink, episode of the anime
-  const { sources, referer, isError, isLoading, episodes } = useVideoSources(
-    animeId,
-    episode,
-    useDub
-  );
+  // total episode count comes from AniList: finished anime expose `episodes`,
+  // while currently-airing ones expose the next airing episode instead.
+  const totalEpisodes =
+    anime.episodes ||
+    (anime.nextAiringEpisode ? anime.nextAiringEpisode.episode - 1 : 0);
 
-  // set the videosources
   useEffect(() => {
-    if (isLoading) {
-      dispatch(resetSources());
-    }
-    dispatch(setSources(sources));
-  }, [dispatch, isLoading, sources]);
-
-  // set the total episodes the animes has
-  useEffect(() => {
-    if (isLoading) return;
-    dispatch(setTotalEpisodes(episodes));
-  }, [dispatch, episodes, isLoading]);
-
-  // set the should use proxy by matching regex
-  useEffect(() => {
-    if (isLoading) return;
-
-    dispatch(setProxy(!videoLink.match(proxyFreeUrls)));
-  }, [dispatch, isLoading, videoLink]);
+    dispatch(setTotalEpisodes(totalEpisodes));
+  }, [dispatch, totalEpisodes]);
 
   // get data about next airing episode
   const { nextAiringEpisode } = anime;
@@ -172,17 +143,8 @@ const Watch = ({
 
       <div className="space-x-4 sm:mt-4 lg:flex">
         <div className="mx-auto max-w-[800px] flex-shrink-0 sm:p-4 lg:mx-0 lg:ml-4 lg:w-[65%] lg:max-w-full lg:p-0">
-          {/* render the video player element */}
-          {!isError ? (
-            <VideoPlayer
-              src={useProxy ? proxyUrl(videoLink, referer) : videoLink}
-              poster={anime.bannerImage}
-            />
-          ) : (
-            <p className="mt-4 ml-3 text-base font-semibold text-white sm:ml-6 sm:text-lg md:text-xl lg:text-2xl xl:text-3xl 2xl:text-4xl">
-              Sorry, the anime video couldn&apos;t be found
-            </p>
-          )}
+          {/* render the embedded video player */}
+          <EmbedPlayer />
 
           {/* the title of what anime is playing */}
           <div className="flex w-full items-center justify-between">

@@ -8,7 +8,8 @@ const withPwa = require('next-pwa');
  * */
 const nextConfig = {
   images: {
-    domains: ['s4.anilist.co', 'media.kitsu.io'],
+    // Kitsu migrated its CDN from media.kitsu.io to media.kitsu.app; keep both.
+    domains: ['s4.anilist.co', 'media.kitsu.io', 'media.kitsu.app'],
     disableStaticImages: true,
   },
   poweredByHeader: false,

@@ -1,7 +1,8 @@
 import { AnyAction } from '@reduxjs/toolkit';
 
-import { toggleDub, toggleProxy } from '@store/slices/videoSettings';
+import { setProvider, toggleDub } from '@store/slices/videoSettings';
 import { useDispatch, useSelector } from '@store/store';
+import { embedProviders } from '@utility/embedProviders';
 
 interface TogglerProps {
   label: string;
@@ -34,15 +35,28 @@ const Toggler: React.FC<TogglerProps> = ({ label, checked, action }) => {
 };
 
 const WatchControls: React.FC = () => {
-  const [useProxy, useDub] = useSelector((store) => [
-    store.videoSettings.useProxy,
-    store.videoSettings.useDub,
-  ]);
+  const dispatch = useDispatch();
+  const provider = useSelector((store) => store.videoSettings.provider);
+  const useDub = useSelector((store) => store.videoSettings.useDub);
 
   return (
-    <div className="m-2 flex space-x-4">
-      <Toggler label="Use Proxy?" checked={useProxy} action={toggleProxy()} />
+    <div className="m-2 flex flex-wrap items-center gap-x-4 gap-y-2">
       <Toggler label="Watch Dubbed?" checked={useDub} action={toggleDub()} />
+
+      <label className="flex items-center text-white">
+        Player:
+        <select
+          value={provider}
+          onChange={(e) => dispatch(setProvider(e.target.value))}
+          className="ml-2 rounded bg-gray-700 px-2 py-1 text-sm text-white outline-none"
+        >
+          {embedProviders.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
     </div>
   );
 };

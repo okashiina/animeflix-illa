@@ -8,6 +8,7 @@ frontend/public/*.js.map
 # generated
 generated/
 dist/
+*.tsbuildinfo
 
 # turbo
 .turbo/

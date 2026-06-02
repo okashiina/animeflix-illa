@@ -1,15 +1,19 @@
 /* eslint-disable no-param-reassign */
 import { createSlice, Draft, PayloadAction } from '@reduxjs/toolkit';
 
+import { defaultProviderId } from '@utility/embedProviders';
+
 export interface VideoSettingsState {
   useDub: boolean;
   useProxy: boolean;
+  provider: string;
 }
 
 const initialState: VideoSettingsState = {
   useDub: false,
   useProxy: false,
-} as const;
+  provider: defaultProviderId,
+};
 
 export const videoSettingsSlice = createSlice({
   name: 'videoSettings',
@@ -33,10 +37,16 @@ export const videoSettingsSlice = createSlice({
     ) => {
       state.useDub = action.payload;
     },
+    setProvider: (
+      state: Draft<VideoSettingsState>,
+      action: PayloadAction<string>
+    ) => {
+      state.provider = action.payload;
+    },
   },
 });
 
-export const { setDub, setProxy, toggleDub, toggleProxy } =
+export const { setDub, setProxy, setProvider, toggleDub, toggleProxy } =
   videoSettingsSlice.actions;
 
 export default videoSettingsSlice.reducer;
