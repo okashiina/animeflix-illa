@@ -38,13 +38,16 @@ interface HlsPlayerProps {
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const SKIPS = [5, 10, 15];
-const CAP_SIZES: { k: string; px: number }[] = [
-  { k: 'S', px: 15 },
-  { k: 'M', px: 19 },
-  { k: 'L', px: 24 },
-  { k: 'XL', px: 30 },
+// Caption sizes scale with the player width (cqw — the stage is a container, see
+// `containerType` on the stage element) and are clamped so they stay sane from a
+// small windowed player up to a 4K fullscreen. Bigger than fixed px on hi-DPI.
+const CAP_SIZES: { k: string; css: string }[] = [
+  { k: 'S', css: 'clamp(13px, 1.8cqw, 36px)' },
+  { k: 'M', css: 'clamp(15px, 2.2cqw, 46px)' },
+  { k: 'L', css: 'clamp(18px, 2.8cqw, 64px)' },
+  { k: 'XL', css: 'clamp(22px, 3.8cqw, 88px)' },
 ];
-const PREFS_KEY = 'kessoku.player.v1';
+const PREFS_KEY = 'kessoku.player.v2';
 const HIDE_MS = 2600;
 
 type CapColor = 'white' | 'yellow';
@@ -59,9 +62,10 @@ interface Prefs {
   rate: number;
   volume: number;
   muted: boolean;
-  capSize: number;
+  capSize: string; // one of CAP_SIZES keys
   capColor: CapColor;
   capBg: CapBg;
+  subOffset: number; // subtitle delay in seconds (+ = subs later)
 }
 
 const loadPrefs = (): Prefs => {
@@ -70,9 +74,10 @@ const loadPrefs = (): Prefs => {
     rate: 1,
     volume: 1,
     muted: false,
-    capSize: 19,
+    capSize: 'M',
     capColor: 'white',
     capBg: 'semi',
+    subOffset: 0,
   };
   if (typeof window === 'undefined') return base;
   try {
@@ -315,6 +320,7 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   const [capSize, setCapSize] = useState(initial.current.capSize);
   const [capColor, setCapColor] = useState<CapColor>(initial.current.capColor);
   const [capBg, setCapBg] = useState<CapBg>(initial.current.capBg);
+  const [subOffset, setSubOffset] = useState(initial.current.subOffset);
 
   const [playing, setPlaying] = useState(false);
   const [waiting, setWaiting] = useState(true);
@@ -339,12 +345,13 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
         capSize,
         capColor,
         capBg,
+        subOffset,
       };
       window.localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
     } catch {
       /* ignore */
     }
-  }, [skip, rate, volume, muted, capSize, capColor, capBg]);
+  }, [skip, rate, volume, muted, capSize, capColor, capBg, subOffset]);
 
   // ---- hls.js wiring (codec shim + media-error recovery + embed fallback) ----
   useEffect(() => {
@@ -497,19 +504,36 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
     setCueText('');
     const t = subIdx >= 0 ? tracks[subIdx] : undefined;
     if (!t) return undefined;
-    const onCue = () => {
-      const cues = t.activeCues;
-      setCueText(
-        cues && cues.length
-          ? Array.from(cues)
-              .map((c) => (c as VTTCue).text)
-              .join('\n')
-          : ''
-      );
+
+    // Render the cue active at (currentTime + subOffset) by scanning the cue list
+    // ourselves, so a user-set subtitle delay works even though the browser's
+    // own activeCues are tied to the raw currentTime. Driven by both cuechange
+    // (precise boundaries at offset 0) and timeupdate (covers the shifted case).
+    const render = () => {
+      const list = t.cues;
+      if (!list || !list.length) {
+        setCueText('');
+        return;
+      }
+      const time = v.currentTime + subOffset;
+      let text = '';
+      for (let i = 0; i < list.length; i += 1) {
+        const c = list[i] as VTTCue;
+        if (c.startTime <= time && time < c.endTime) {
+          text = text ? `${text}\n${c.text}` : c.text;
+        }
+      }
+      setCueText(text);
     };
-    t.addEventListener('cuechange', onCue);
-    return () => t.removeEventListener('cuechange', onCue);
-  }, [subIdx, subtitles.length, src]);
+
+    t.addEventListener('cuechange', render);
+    v.addEventListener('timeupdate', render);
+    render();
+    return () => {
+      t.removeEventListener('cuechange', render);
+      v.removeEventListener('timeupdate', render);
+    };
+  }, [subIdx, subtitles.length, src, subOffset]);
 
   // Fullscreen state sync. Refocus the stage on enter so keyboard keeps working.
   useEffect(() => {
@@ -689,6 +713,10 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
           onPointerLeave={() =>
             playing && !settings && !help && setShowUi(false)
           }
+          // container-type lets the caption layer size itself in `cqw` (1% of the
+          // stage width), so captions scale with the player and with fullscreen.
+          // (cast: containerType predates this csstype version.)
+          style={{ containerType: 'inline-size' } as React.CSSProperties}
           className={`group bg-black outline-none ${
             chromeVisible ? '' : 'cursor-none'
           }`}
@@ -724,7 +752,9 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
               <span
                 className="max-w-[90%] font-semibold leading-snug"
                 style={{
-                  fontSize: `${capSize}px`,
+                  fontSize:
+                    CAP_SIZES.find((c) => c.k === capSize)?.css ??
+                    CAP_SIZES[1].css,
                   whiteSpace: 'pre-line',
                   color: capColor === 'yellow' ? '#F2D43D' : '#F6F6F8',
                   background: CAP_BG[capBg],
@@ -975,14 +1005,47 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
                               )}
                             </div>
                           </div>
+                          {subIdx >= 0 && (
+                            <div>
+                              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                                Subtitle delay
+                              </p>
+                              <div className="flex items-center gap-1.5">
+                                {menuChip('-0.5s', false, () =>
+                                  setSubOffset((o) =>
+                                    Math.max(
+                                      -60,
+                                      Math.round((o - 0.5) * 10) / 10
+                                    )
+                                  )
+                                )}
+                                <span className="min-w-[3.25rem] text-center text-xs font-semibold tabular-nums text-fg">
+                                  {subOffset > 0 ? '+' : ''}
+                                  {subOffset.toFixed(1)}s
+                                </span>
+                                {menuChip('+0.5s', false, () =>
+                                  setSubOffset((o) =>
+                                    Math.min(
+                                      60,
+                                      Math.round((o + 0.5) * 10) / 10
+                                    )
+                                  )
+                                )}
+                                {subOffset !== 0 &&
+                                  menuChip('Reset', false, () =>
+                                    setSubOffset(0)
+                                  )}
+                              </div>
+                            </div>
+                          )}
                           <div>
                             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
                               Caption size
                             </p>
                             <div className="flex flex-wrap gap-1">
                               {CAP_SIZES.map((c) =>
-                                menuChip(c.k, capSize === c.px, () =>
-                                  setCapSize(c.px)
+                                menuChip(c.k, capSize === c.k, () =>
+                                  setCapSize(c.k)
                                 )
                               )}
                             </div>
