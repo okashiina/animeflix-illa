@@ -13,5 +13,7 @@ fragment AnimeBanner on Media {
   season
   startDate {
     year
+    month
+    day
   }
 }
