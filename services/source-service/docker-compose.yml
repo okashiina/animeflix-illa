@@ -1,10 +1,21 @@
-# Deploy on the VPS: `docker compose up -d --build`
-# FlareSolverr (real Chromium, solves Cloudflare) is internal-only; the
-# source-service talks to it over the private compose network.
+# Self-hosted source-service + FlareSolverr (Option B).
+#
+# LAPTOP (local / personal host, now):  docker compose up -d --build
+#   - source-service is published on :8088  (host :8080 is the user's Apache httpd).
+#   - the frontend points NEXT_PUBLIC_SOURCE_SERVICE_URL at http://localhost:8088.
+#   - restart: unless-stopped -> the stack auto-starts on boot / Docker launch and
+#     survives laptop sleep, so the service stops dying when the laptop idles.
+#
+# VPS (later): the same file works there. To STOP the laptop from auto-starting this
+# once the VPS is live, see CLAUDE.md section 5 ("Local host runbook -> moving to a VPS").
+#
+# FlareSolverr (real Chromium, solves Cloudflare / DDoS-Guard) is internal-only: the
+# source-service reaches it over the private compose network at flaresolverr:8191.
 
 services:
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: kessoku-flaresolverr
     restart: unless-stopped
     environment:
       - LOG_LEVEL=info
@@ -13,11 +24,24 @@ services:
 
   source-service:
     build: .
+    container_name: kessoku-source-service
     restart: unless-stopped
     env_file: .env
     environment:
       - FLARESOLVERR_URL=http://flaresolverr:8191/v1
     ports:
-      - "8080:8080"
+      - "8088:8080"
     depends_on:
       - flaresolverr
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

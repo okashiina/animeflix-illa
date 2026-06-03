@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { useSelector } from '@store/store';
 
 import EmbedPlayer from './EmbedPlayer';
+import HlsPlayer, { type Subtitle } from './HlsPlayer';
 
 // Our self-hosted source pipeline (Option B). When NEXT_PUBLIC_SOURCE_SERVICE_URL
 // is set (local dev / a VPS), we ask it to resolve a real m3u8 (AnimePahe via
-// FlareSolverr, proxied through /hls) and play it with hls.js — with quality
-// selection. If it isn't set, resolving fails, or the user prefers it, we fall
-// back to the third-party embed switcher. The two are switchable both ways.
+// FlareSolverr, proxied through /hls) and play it in our own player (HlsPlayer)
+// with quality selection. If it isn't set, resolving fails, or the user prefers
+// it, we fall back to the third-party embed switcher. Switchable both ways.
 
 const SOURCE_SERVICE = process.env.NEXT_PUBLIC_SOURCE_SERVICE_URL;
 
@@ -20,63 +21,8 @@ interface WatchResponse {
   mode: 'direct' | 'embed';
   provider?: string;
   sources?: Source[];
+  subtitles?: Subtitle[];
 }
-
-const HlsVideo: React.FC<{ src: string }> = ({ src }) => {
-  const ref = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    const video = ref.current;
-    if (!video) return undefined;
-
-    let destroyed = false;
-    let hls: { destroy: () => void } | null = null;
-
-    // Prefer hls.js (Chrome/Edge/Firefox); native HLS only where it can't run
-    // (Safari). Chromium's canPlay('mpegurl') lies, so don't check it first.
-    import('hls.js').then(({ default: Hls }) => {
-      if (destroyed || !ref.current) return;
-      if (Hls.isSupported()) {
-        const instance = new Hls({ enableWorker: true });
-        instance.on(
-          Hls.Events.ERROR,
-          (
-            _e: unknown,
-            data: { type: string; details: string; fatal: boolean }
-          ) => {
-            // eslint-disable-next-line no-console
-            console.error(
-              '[hls]',
-              data.type,
-              data.details,
-              data.fatal ? 'FATAL' : ''
-            );
-          }
-        );
-        instance.loadSource(src);
-        instance.attachMedia(ref.current);
-        hls = instance;
-      } else if (ref.current.canPlayType('application/vnd.apple.mpegurl')) {
-        ref.current.src = src;
-      }
-    });
-
-    return () => {
-      destroyed = true;
-      if (hls) hls.destroy();
-    };
-  }, [src]);
-
-  return (
-    <video
-      ref={ref}
-      controls
-      autoPlay
-      playsInline
-      className="h-full w-full bg-black"
-    />
-  );
-};
 
 const Frame: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="aspect-w-16 aspect-h-9 w-full overflow-hidden rounded-2xl bg-canvas-2 shadow-card ring-1 ring-line/40">
@@ -84,7 +30,10 @@ const Frame: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   </div>
 );
 
-const SourcePlayer: React.FC<{ titles: string[] }> = ({ titles }) => {
+const SourcePlayer: React.FC<{ titles: string[]; onNext?: () => void }> = ({
+  titles,
+  onNext,
+}) => {
   const animeId = useSelector((store) => store.anime.anime);
   const episode = useSelector((store) => store.episode.episode);
   const useDub = useSelector((store) => store.videoSettings.useDub);
@@ -93,8 +42,12 @@ const SourcePlayer: React.FC<{ titles: string[] }> = ({ titles }) => {
     SOURCE_SERVICE ? 'loading' : 'embed'
   );
   const [sources, setSources] = useState<Source[]>([]);
+  const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
   const [provider, setProvider] = useState('');
   const [qIdx, setQIdx] = useState(0);
+  // Our HLS pipeline resolved, but the browser couldn't decode it (codec) —
+  // we auto-dropped to embed and tell the user why.
+  const [decodeFailed, setDecodeFailed] = useState(false);
 
   // Stable key for the titles array (a fresh array every render would loop).
   const titlesKey = titles.join(',');
@@ -108,7 +61,9 @@ const SourcePlayer: React.FC<{ titles: string[] }> = ({ titles }) => {
     }
     setPhase('loading');
     setSources([]);
+    setSubtitles([]);
     setQIdx(0);
+    setDecodeFailed(false);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 90000);
@@ -122,6 +77,7 @@ const SourcePlayer: React.FC<{ titles: string[] }> = ({ titles }) => {
       .then((data) => {
         if (data.mode === 'direct' && data.sources && data.sources.length > 0) {
           setSources(data.sources);
+          setSubtitles(data.subtitles || []);
           setProvider(data.provider || '');
           setPhase('direct');
         } else {
@@ -142,20 +98,35 @@ const SourcePlayer: React.FC<{ titles: string[] }> = ({ titles }) => {
 
   const hasOurPlayer = sources.length > 0;
 
-  // ---- Embed view (manual fallback or resolve failure) ----
+  // ---- Embed view (manual fallback or resolve/decode failure) ----
   if (phase === 'embed') {
+    // decodeFailed: re-showing 'direct' would just hit the same undecodable
+    // source, so the retry re-runs the resolver from scratch instead.
+    let switchLabel = '↺ Try our server';
+    if (decodeFailed) switchLabel = '↺ Retry our player';
+    else if (hasOurPlayer) switchLabel = '↺ Switch to our player (HD)';
+
+    const switchHint = decodeFailed
+      ? "our player couldn't decode this episode here — using an embed server"
+      : 'or pick a third-party server above';
+
+    const onSwitch = () => {
+      if (decodeFailed || !hasOurPlayer) resolve();
+      else setPhase('direct');
+    };
+
     return (
       <div className="space-y-2.5">
         <EmbedPlayer />
         <div className="flex flex-wrap items-center gap-2 text-xs text-faint">
           <button
             type="button"
-            onClick={() => (hasOurPlayer ? setPhase('direct') : resolve())}
+            onClick={onSwitch}
             className="rounded-full bg-aurora px-3 py-1 font-semibold text-accent-ink shadow-glow transition active:scale-95"
           >
-            {hasOurPlayer ? '↺ Switch to our player (HD)' : '↺ Try our server'}
+            {switchLabel}
           </button>
-          <span>or pick a third-party server above</span>
+          <span>{switchHint}</span>
         </div>
       </div>
     );
@@ -185,45 +156,19 @@ const SourcePlayer: React.FC<{ titles: string[] }> = ({ titles }) => {
 
   // ---- Direct (our) player ----
   return (
-    <div className="space-y-2.5">
-      <Frame>
-        <HlsVideo src={sources[qIdx]?.url} />
-      </Frame>
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="rounded-full bg-aurora px-2.5 py-1 font-semibold text-accent-ink shadow-glow">
-          ▶ our player{provider ? ` · ${provider}` : ''}
-        </span>
-
-        {sources.length > 1 && (
-          <span className="flex items-center gap-1 rounded-full border border-line/70 bg-surface px-1 py-0.5">
-            <span className="px-1.5 text-faint">Quality</span>
-            {sources.map((s, i) => (
-              <button
-                // eslint-disable-next-line react/no-array-index-key
-                key={`${s.quality}-${i}`}
-                type="button"
-                onClick={() => setQIdx(i)}
-                className={`rounded-full px-2 py-0.5 font-medium transition ${
-                  i === qIdx
-                    ? 'bg-accent text-accent-ink'
-                    : 'text-muted hover:bg-surface-2 hover:text-fg'
-                }`}
-              >
-                {s.quality || 'auto'}
-              </button>
-            ))}
-          </span>
-        )}
-
-        <button
-          type="button"
-          onClick={() => setPhase('embed')}
-          className="rounded-full border border-line/70 bg-surface px-2.5 py-1 font-medium text-muted transition hover:bg-surface-2 hover:text-fg"
-        >
-          Use embed instead
-        </button>
-      </div>
-    </div>
+    <HlsPlayer
+      sources={sources}
+      qIdx={qIdx}
+      onQuality={setQIdx}
+      provider={provider}
+      subtitles={subtitles}
+      onUseEmbed={() => setPhase('embed')}
+      onUnplayable={() => {
+        setDecodeFailed(true);
+        setPhase('embed');
+      }}
+      onNext={onNext}
+    />
   );
 };
 

@@ -101,11 +101,13 @@ Railway datacenter IPs are heavily challenged. Options, cheapest→most robust:
 ## 5. Phases & decision gates
 
 - **Phase 0 — DONE.** Embed switcher live = safety net.
-- **Phase 1 — PoC: SUCCESS (2026-06-03).** End-to-end playable m3u8 obtained through
-  our own pipeline on the user's laptop, free, via **FlareSolverr (Docker) + AnimePahe**.
-  See §5b. Still TODO: wire the AnimePahe extractor into source-service `providers/` +
-  HLS proxy (inject `Referer: https://kwik.cx/`) + a Vidstack player on the watch page
-  (`mode:'direct'`), keeping the embed switcher as fallback.
+- **Phase 1 — WIRED & PLAYING (2026-06-03).** End-to-end playback confirmed in a
+  real browser: **FlareSolverr (Docker) + AnimePahe** → kwik → m3u8 → `/hls` proxy
+  (injects `Referer: https://kwik.cx/`) → **hls.js** on the watch page (`mode:'direct'`),
+  embed switcher kept as the bidirectional fallback. One gotcha solved: AnimePahe/kwik
+  mis-signals AAC-LC audio as **AAC-Main (`mp4a.40.1`)**, which Chrome can't
+  `addSourceBuffer`; a tiny MSE shim remaps it to `mp4a.40.2` so it decodes. Player UX
+  polish is the next round — see **§8**.
 - **Phase 2 — Resilience.** Add 2–3 fallback providers + caching + circuit breakers
   + canary monitoring + `/status`. Gate: canary >95% green for a week.
 - **Phase 3 — Subtitles.** OpenSubtitles (id) → VTT, wired into our player.
@@ -169,3 +171,63 @@ Option B later: stand up Docker + FlareSolverr, then implement
 - `mindrally/skills@web-scraping` (3K) — scraping patterns.
 - `wshobson/agents@nextjs-app-router-patterns` (19.6K) — Next.js patterns.
 - Player lib (direct dep, not a skill): **vidstack** or **artplayer** + `hls.js`.
+
+---
+
+## 8. Requested feature backlog (player UX + data) — from user, 2026-06-03
+
+Phase 1 plays end-to-end now. The next rounds, in user-priority order:
+
+**Player UX (in progress).** Replace the plain native `<video controls>` with our own
+control bar — own-brand SVG icons, **no new dependency** (the repo already ships
+`@vime`, `hls.js`, `@heroicons`, `framer-motion`; we hand-roll icons for a bespoke
+look and to avoid lockfile churn while another session edits the home page). Scope:
+configurable **skip ±5/10/15s**, **PiP**, **fullscreen**, **playback speed**, volume,
+scrubber with buffered range, a **settings** menu, **keyboard hotkeys**, and a
+**captions toggle** scaffold (real tracks arrive in Phase 3). Quality select + the
+bidirectional embed fallback stay.
+
+**Backlog (next phases):**
+1. **Watch history** — track last-watched episode + resume timestamp ("continue
+   watching"). Build on the existing `Anime{id}="{ep}-{sec}"` localStorage record
+   (already written in `watch/[id].tsx`).
+2. **Hotkey `n` → next episode** (folded into the player keyboard now).
+3. **Skip-intro** — needs intro/outro markers (aniskip API, keyed by MAL id).
+4. **Indonesian subtitles** — Phase 3 (OpenSubtitles id → VTT). AnimePahe returns none today.
+5. **Dubbed via our player** — likely broken; investigate AnimePahe dub (`category=dub`).
+6. **/api-finder** — filler vs canon episode data → colour-code episodes (filler /
+   canon / mixed) **with a legend**. No official API; scrape animefillerlist.com.
+7. **Related-anime grouping** — nest sequels/OVA/side-stories under the parent (JJK S2
+   under JJK), via AniList `relations` edges (SEQUEL/PREQUEL/SIDE_STORY/…) or MAL —
+   not as standalone entries.
+8. **Multi-source fallback** — AnimePahe lags new/airing titles (JJK S3/Culling Game
+   not found); research + scrape more providers for a real fallback chain (Phase 2
+   resilience SOP §3 circuit breaker + §1 provider chain). Decided order (2026-06-03):
+   dockerize + commit -> revive **AllAnime** (local-testable via FlareSolverr) ->
+   **Indonesian subs** via OpenSubtitles (player is already subtitle-ready). HiAnime
+   (`aniwatch`, already a dep, soft-subs + best new-anime coverage) is ISP-blocked on
+   the laptop, so it only becomes testable on the VPS.
+
+---
+
+## 9. Local host runbook (laptop) + VPS migration off-ramp
+
+The Option B stack runs via Docker Compose in `services/source-service/`
+(`docker compose up -d --build`): `kessoku-flaresolverr` + `kessoku-source-service`,
+published on **:8088** (host :8080 is the user's Apache). Both use
+`restart: unless-stopped`, so they auto-start on boot / Docker launch and survive
+laptop sleep — that is what stops the service dying on idle. Requirements: Docker
+Desktop running, **WARP OFF** (it changes the egress IP and breaks DDoS-Guard). The
+frontend reaches it via `NEXT_PUBLIC_SOURCE_SERVICE_URL=http://localhost:8088`
+(gitignored `.env.local`); unset that (e.g. production) and the player stays embed-only.
+
+**Moving to a VPS later — turn OFF the laptop auto-start** (so the two don't run in
+parallel):
+1. Laptop, from `services/source-service/`: `docker compose down` (stops + removes the
+   containers; removed containers are not revived by `unless-stopped` on reboot).
+2. Optional: disable Docker Desktop "Start when you log in" if you don't want Docker
+   booting at all.
+3. VPS: run the same `docker compose up -d --build` (there `unless-stopped` is correct,
+   always-on).
+4. Repoint the frontend `NEXT_PUBLIC_SOURCE_SERVICE_URL` from `localhost:8088` to the
+   VPS URL.

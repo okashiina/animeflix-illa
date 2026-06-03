@@ -149,6 +149,11 @@ const Watch = ({
               titles={[anime.title.romaji, anime.title.english].filter(
                 (t): t is string => Boolean(t)
               )}
+              onNext={
+                episode < totalEpisodes
+                  ? () => dispatch(setEpisode(episode + 1))
+                  : undefined
+              }
             />
 
             <div className="mt-5">
