@@ -8,6 +8,10 @@ import {
   SdkFunctionWrapper,
 } from './generated/kitsu';
 
+// Filler / canon episode classification (scraped from animefillerlist.com).
+export { getFillerEpisodes } from './filler';
+export type { FillerKind } from './filler';
+
 const aniListClient = new GraphQLClient(aniListEndpoint, {
   headers: {},
 });

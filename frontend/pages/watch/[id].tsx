@@ -190,7 +190,10 @@ const Watch = ({
               <WatchControls />
             </div>
 
-            <Episode />
+            <Episode
+              title={anime.title.romaji || anime.title.english}
+              altTitle={anime.title.english}
+            />
 
             <div className="mt-6">
               <h2 className="font-display text-lg font-bold text-fg">
