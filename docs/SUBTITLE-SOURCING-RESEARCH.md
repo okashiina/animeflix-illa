@@ -12,13 +12,17 @@ fetched 2025–2026 doc. Probe scripts live in
 > **TL;DR.** For **English**, don't build a subtitle pipeline at all — the
 > soft-sub streaming sources we already use (HiAnime/Zoro via `aniwatch`,
 > consumet) hand us an English `.vtt` track with the stream. For **Japanese**,
-> **Jimaku** is the clean, AniList-keyed winner. For **Indonesian**, there is
-> **no good API**: Indo anime subs live almost entirely as **hardsubs** on Indo
-> streaming sites (same problem as AnimePahe) and as scattered, non-AniList-keyed
-> files. The honest verdict is that **broad Indonesian external-track coverage is
-> not realistically attainable** from a clean source; the least-bad path is
-> **subdl** (has an `id` catalogue, but anime + per-episode coverage is thin and
-> IMDb-keyed).
+> **Jimaku** is the clean, AniList-keyed winner. For **Indonesian**, **subdl is
+> genuinely viable for current/popular anime** — CORRECTION to the original
+> pessimistic verdict, now verified live with a real key (2026-06-03): subdl
+> serves **per-episode, Crunchyroll-sourced Indonesian** tracks (downloadable
+> `.zip` → `.ass`/`.srt`) for Frieren, Jujutsu Kaisen, Demon Slayer, Spy×Family,
+> Mushoku Tensei, Oshi no Ko, Solo Leveling, …. Coverage is **good for recent
+> simulcast titles, thin-to-none for older classics** (Naruto / One Piece /
+> Steins;Gate ≈ 0 per-episode). The earlier "not realistically attainable" claim
+> came from a **probe bug** (it filtered `language === 'Indonesian'` while the API
+> returns the code `'ID'`). End-to-end chain verified: list → download zip →
+> unzip → real CR `Bahasa Indonesia` `.ass` → (ASS→VTT) → player.
 
 ---
 
@@ -30,7 +34,7 @@ Anime subs split into three realities:
 |---|---|---|
 | **English** | Bundled as a `.vtt` track by the soft-sub stream itself (HiAnime/Zoro via the `aniwatch` lib; consumet). The scraper returns `subtitles: [{ lang: "English", url: "...vtt" }]`. | **No.** We get English VTT for free with the video. |
 | **Japanese** | Not bundled; lives on Jimaku/Kitsunekko as `.srt`/`.ass`. | Yes — Jimaku. |
-| **Indonesian** | Hardsubbed into Indo streaming players; almost never a clean downloadable track. | Yes, and **this is the actual gap and the hard one.** |
+| **Indonesian** | Mostly hardsubbed on Indo streaming sites — **but subdl serves clean, downloadable, per-episode (often Crunchyroll) tracks for current/popular anime** (verified). Sparse for old classics. | Yes — subdl. The real gap is only older/niche titles. |
 
 So the engineering effort should target **Indonesian + occasional other
 languages**, and treat English as solved by the stream we already resolve. Don't
@@ -72,9 +76,9 @@ Indonesian gap.
 | **Access** | REST API, `GET https://api.subdl.com/api/v1/subtitles`. **`api_key` query param mandatory** — verified: no-key request returns **422** validation error. Free key from `https://subdl.com/panel/api`. |
 | **Lookup params** | `film_name=` (title search) **or** `sd_id` / `imdb_id` / `tmdb_id`; for series `type=tv&season_number=&episode_number=`; `languages=ID,EN` (comma-separated); `subs_per_page` (≤30), `unpack=1` to list per-episode files inside season packs. |
 | **id mapping** | **IMDb / TMDB-keyed** (or title text-search). **No AniList, no AniDB.** To use ids you must map AniList→IMDb/TMDB first (see §4). In practice title search (`film_name`) is the pragmatic path for anime. |
-| **Format** | `.srt`, delivered as a **ZIP** (`https://dl.subdl.com/subtitle/...`) — you download, unzip, pick the right episode file, convert SRT→VTT (trivial). |
-| **Anime coverage** | **Thin and inconsistent** for anime, especially per-episode TV. subdl shines for movies/live-action; anime series episode-level subs are spotty. |
-| **Indonesian** | **Yes — Indonesian (`id`) is a first-class supported language**, and subdl has a genuinely Indonesia-leaning community. This is the single best API-accessible Indonesian option found. But for *anime specifically*, expect partial coverage (popular movies/films > long-running TV). |
+| **Format** | ZIP (`https://dl.subdl.com/subtitle/...`) → unzip → **`.srt` OR `.ass`**. CR-sourced Indonesian rips are **`.ass`** (verified: a Frieren S02E01 zip held `…Bahasa Indonesia.ID.ass`, `Original Script: Crunchyroll`); community uploads are often `.srt`. SRT→VTT trivial; ASS→VTT lossy-but-fine for dialogue (§3). |
+| **Anime coverage** | **Good for current/recent simulcast TV** — verified per-episode (`languages=ID`): Frieren, JJK, Demon Slayer, Spy×Family, Mushoku Tensei, Oshi no Ko all return ≥ the 30-row page cap; Solo Leveling 18. **Thin-to-none for older classics** (Naruto/One Piece/Steins;Gate/Bocchi ≈ 0 per-episode). Plus movies. (The earlier "thin/spotty" verdict was understated — corrected after fixing the probe's ID-counter bug.) |
+| **Indonesian** | **Yes — first-class (`ID` code), much of it Crunchyroll-sourced** (professional, per-episode) for current titles. The best API-accessible Indonesian option by far. **Integration note:** query `languages=ID` alone — a combined `ID,EN` lets EN fill the 30-row page and hide the ID rows. |
 | **Probe** | `scripts/research-subs-subdl.mjs` — confirmed the 422-without-key behavior; with a key it prints a per-language histogram and lists every `language="indonesian"` hit. |
 
 **Verdict:** **The recommended Indonesian source** — it is the only one that
@@ -149,30 +153,30 @@ solved (§0), and it does nothing for Indonesian. Low priority.
 
 ---
 
-## 2. The Indonesian reality (the honest part)
+## 2. The Indonesian reality (revised after live testing)
 
-There is **no clean, AniList-keyed API that serves Indonesian anime subtitles as
-downloadable tracks.** What actually exists:
+**Correction.** The first pass concluded "no clean API serves Indonesian anime
+tracks." Live testing with a real subdl key (2026-06-03) disproved that for
+current titles. The accurate picture:
 
-1. **Indo streaming-scraper APIs** (e.g. `miukyo/aniyoi-api`, the
-   `sankavollerei` Otakudesu/Samehadaku APIs) scrape sites like Otakudesu,
-   Samehadaku, Kuronime, Kuramanime. These are **slug-keyed (not AniList/MAL)**,
-   frequently **on hiatus / breaking**, and — critically — the Indonesian subs on
-   those sites are almost always **hardsubbed into the video** (exactly the
-   AnimePahe problem). So they give us *another stream*, not an *external track*.
-   They do **not** solve our requirement.
-2. **subdl** (`id` catalogue) — the only real API path, but anime-episode
-   coverage is partial and IMDb-keyed (§1 #2).
+1. **subdl is the real path.** `languages=ID` returns **per-episode, downloadable,
+   often Crunchyroll-sourced** Indonesian tracks for current/popular anime (§1 #2).
+   IMDb/title-keyed; `film_name` search works well. Verified end-to-end (download →
+   unzip → real `Bahasa Indonesia` `.ass`).
+2. **Indo streaming-scraper APIs** (`miukyo/aniyoi-api`, the `sankavollerei`
+   Otakudesu/Samehadaku APIs) are slug-keyed, breakage-prone, and serve
+   **hardsubs** (another stream, not a track) — still not useful.
 3. **Fansub `.ass`** from the BitTorrent scene (AnimeTosho) — overwhelmingly
-   English; Indonesian is absent there.
+   English; Indonesian absent there.
 
-**Realism verdict:** Expect to cover Indonesian for a **minority** of titles
-(popular films and some popular series via subdl), **not** the broad library.
-Anything more would require either (a) sourcing Indo fansub `.ass` from
-Indonesian fansub communities by hand, or (b) **machine-translating** an
-English/Japanese track to Indonesian on our server (a real, buildable Plan B, but
-it's MT quality, not human subs). Don't promise users "Indonesian subtitles
-everywhere" — promise it where available, and consider an MT fallback toggle.
+**Realism verdict (revised):** Indonesian is **readily available for current and
+recent popular anime** via subdl (the simulcast era — the bulk of what users
+actually watch), and **sparse for older / classic / niche** titles. So promise
+Indonesian *"where we have it"* (strong for new/popular, gaps on old shows), and
+keep **server-side machine translation** as the optional fallback for the long
+tail. Caveats: coverage per page caps at 30 (paginate for long series); subs are
+timed to a specific encode (CR WEB-DL) so sync vs our AnimePahe video may drift a
+little; quality varies for non-CR community uploads.
 
 ---
 
@@ -225,10 +229,11 @@ Jimaku.
    resolver's output and gets passed to `HlsPlayer`'s `subtitles` prop.)
 2. **Japanese — integrate Jimaku.** Cleanest source, AniList-native, one key.
    Search by `anilist_id`, list files, match episode number, ASS→VTT server-side.
-3. **Indonesian — integrate subdl as best-effort.** It's the only API with `id`.
-   Use AniList→IMDb/TMDB (Fribb map) or title search; SRT→VTT is trivial. Accept
-   partial coverage and surface honestly in the UI ("Indonesian subs where we
-   have them"). The player already says as much in its empty state.
+3. **Indonesian — integrate subdl (now a real win for current titles).** Query
+   `languages=ID` by title; download the `.zip`, unzip, convert `.ass`/`.srt` → VTT
+   server-side, cache. Good coverage for recent/popular anime, gaps on old
+   classics — surface honestly in the UI ("Indonesian subs where we have them").
+   Add an optional MT fallback for the long tail later.
 4. **Optional English styled fallback — AnimeTosho** (no key) if we ever want
    release-quality `.ass` over the plain stream VTT. Low priority.
 5. **Skip** OpenSubtitles (mapping pain + 20/day cap), Kitsunekko (Jimaku

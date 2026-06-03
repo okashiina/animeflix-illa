@@ -8,7 +8,8 @@
 //   langs:    languages=ID,EN  (Indonesian IS a supported code)
 //   packing:  subs_per_page (<=30), unpack=1 to list per-episode files
 // Output: JSON { status, results[], subtitles[] }; each subtitle.url is a ZIP of
-// .srt files under https://dl.subdl.com/subtitle/...
+// .srt OR .ass files under https://dl.subdl.com/subtitle/... (CR-sourced rips are
+// .ass). subtitle fields seen live: { language:'ID', name, season, episode, url }.
 //
 // The id-mapping pain: subdl keys on IMDb/TMDB (movie/series level), NOT AniList
 // and NOT AniDB. Anime seasons map one-to-many onto a single IMDb series id, so
@@ -80,9 +81,16 @@ const LANGS = process.env.LANGS || 'ID,EN';
   const byLang = {};
   for (const s of subs) byLang[s.language] = (byLang[s.language] || 0) + 1;
   console.log('  language histogram:', byLang);
-  const indo = subs.filter((s) => /indones/i.test(s.language || ''));
+  // subdl returns the language CODE ('ID'), not the word 'Indonesian'.
+  const indo = subs.filter(
+    (s) => String(s.language).toUpperCase() === 'ID' || /indones/i.test(s.language || '')
+  );
   console.log(`  Indonesian subtitle files: ${indo.length}`);
+  const eps = [...new Set(indo.filter((s) => s.episode).map((s) => s.episode))].sort(
+    (a, b) => a - b
+  );
+  if (eps.length) console.log(`  Indonesian episodes covered: [${eps.join(', ')}]`);
   for (const s of indo.slice(0, 8)) {
-    console.log(`   - [${s.language}] ${s.release_name} -> ${s.url}`);
+    console.log(`   - [${s.language}] s${s.season ?? '?'}e${s.episode ?? '?'} ${s.name} -> ${s.url}`);
   }
 })().catch((e) => console.error('FATAL', e));

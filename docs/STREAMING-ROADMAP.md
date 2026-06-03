@@ -122,12 +122,16 @@ Railway datacenter IPs are heavily challenged. Options, cheapest→most robust:
 - **Phase 3 — Subtitles.** Plan revised by research (2026-06-03 — see
   [SUBTITLE-SOURCING-RESEARCH.md](SUBTITLE-SOURCING-RESEARCH.md)): **English is free**
   (the soft-sub stream bundles an English VTT — don't build a pipeline for it).
-  **Japanese → Jimaku** (AniList-native API). **Indonesian → subdl** best-effort
-  (`id` catalogue, IMDb-keyed, partial anime coverage). Convert ASS/SRT → VTT
-  server-side and cache. Honest verdict: broad Indonesian coverage is not attainable
-  from a clean source (Indo subs are mostly hardsubs); full coverage only via
-  server-side machine translation. **Free API keys to obtain: Jimaku + subdl.**
-  OpenSubtitles deprioritized (IMDb-mapping pain + ~20 downloads/day cap).
+  **Japanese → Jimaku** (AniList-native API). **Indonesian → subdl** — keys now in
+  hand & **verified live (2026-06-03)**: subdl serves per-episode, often
+  Crunchyroll-sourced Indonesian `.ass`/`.srt` for current/popular anime (Frieren,
+  JJK, Demon Slayer, Spy×Family, Mushoku Tensei, Oshi no Ko, Solo Leveling, …),
+  thin-to-none for old classics. Pipeline: query `languages=ID` by title → download
+  zip → unzip → ASS/SRT→VTT server-side → cache → player `subtitles` prop (works on
+  the laptop today, overlaid even on AnimePahe's hardsub stream). MT stays the
+  optional long-tail fallback. **Keys obtained: Jimaku + subdl — stored in
+  `services/source-service/.env` (gitignored).** OpenSubtitles deprioritized
+  (IMDb-mapping pain + ~20 downloads/day cap).
 - **Phase 4 — UI redesign** (now prioritized FIRST — free, high-value, no source
   dependency). Rebuild watch/home/browse UI in-repo on the existing embed playback,
   using the mandatory UI/UX skills (CLAUDE.md). Player lib decided here.
@@ -260,3 +264,76 @@ parallel):
    always-on).
 4. Repoint the frontend `NEXT_PUBLIC_SOURCE_SERVICE_URL` from `localhost:8088` to the
    VPS URL.
+
+---
+
+## 10. Idea parking lot — AI companion & social co-watch (exploratory, NOT committed)
+
+Captured from a user brainstorm (2026-06-03). These are product-direction ideas to
+weigh later, **not** scheduled work and **not** greenlit. Status for all of them:
+**idea / research**. The point of writing them down is so we record honest feasibility
+before any of it earns a phase number.
+
+**A. AI recommendation chatbot.**
+- Pitch: chat "what should I watch" and get AniList-grounded recommendations.
+- Open question the user raised himself: is it overkill for a streaming site? A plain
+  "because you watched X" rail likely delivers most of the value for a fraction of the
+  work. Park unless it can beat the simpler non-chat version on something concrete.
+
+**B. AI watch companion (the standout idea — both people in the chat lit up at it).**
+- Pitch: an AI persona you can chat with *while the episode plays* — it reacts, banters,
+  answers "wait, who is that again?", and talks about the show with you in real time.
+- Why it could be *the* selling point: people who watch obscure or niche titles have
+  nobody around to discuss them with. A companion that is always there to talk about
+  *this* episode is genuine differentiation, not a checkbox feature.
+- Brand fit: a Kessoku-Band-flavoured persona (Bocchi-shy, or bandmate energy) lines up
+  with the rebrand voice ("dark, cute, a little rock"). This is exactly the kind of
+  feature that identity is built to carry. Persona writing = a brand-copywriter job if
+  and when it becomes real.
+- Feasibility note (honest): the AI does **not** need to literally "watch" the frames.
+  Ground it on data we already have or are already sourcing — AniList synopsis + tags,
+  the **subtitle track** (Phase 3 already pulls VTT), and the current episode/timestamp
+  — so it can talk about what is happening with no video understanding. True
+  frame-level vision is a much heavier, much later thing; don't gate the idea on it.
+
+**C. Watch together (synced co-watch rooms).**
+- Pitch: a shared room where friends watch in sync (play / pause / seek propagated)
+  with a side chat. The companion from (B) could optionally sit in the room too.
+- Cost shape: needs a realtime layer (websockets, or a managed pub-sub) plus
+  playback-sync logic. Doable, but it is its own build — sequence it after the core
+  player and sources are solid, not before.
+
+**D. Self-hosting the LLM (the shared enabler for A–C).**
+- Source of the idea (now confirmed): **Odysseus** by `pewdiepie-archdaemon` — repo
+  <https://github.com/pewdiepie-archdaemon/odysseus>, site
+  <https://pewdiepie-archdaemon.github.io/odysseus/>. **MIT-licensed**, self-hosted,
+  billed as "the self-hosted version of the UI experience you get from ChatGPT and Claude."
+- What it actually is: a **model-agnostic AI workspace, not a model.** It is the
+  orchestration / UI layer — chat, autonomous agents with tools (bash / files / web /
+  memory), MCP integration, persistent memory (ChromaDB), deep research, model
+  comparison, and a "Cookbook" that scans your hardware and recommends/serves models
+  (270+ catalogued). It connects to whatever backend you point it at: **local**
+  (llama.cpp / Ollama / vLLM) **or remote** (OpenAI / OpenRouter). Deploys exactly like
+  our source-service — `docker compose up -d --build`, web UI on `:7000`.
+- Why that matters for us: it fits *both* hosting paths below, and the Docker pattern is
+  one we already run. But it is a **general ChatGPT-style workspace, not an embeddable
+  in-player companion** — so for feature B we would either run it standalone as a
+  self-hosted assistant, or reuse only its model-serving layer and build our own
+  companion UI. It is not a drop-in widget.
+- **Reality check (Odysseus does NOT dodge this):** its own docs say the core app is
+  lightweight but "**local model serving is the heavy part**." The current Option B box
+  is ~2 GB RAM and already spent on FlareSolverr — it cannot also run local inference on
+  a quality model (7B and up wants far more RAM and realistically a GPU, a different cost
+  tier from the $5–6/mo source VPS). Two honest paths, and Odysseus supports either:
+    1. **Odysseus pointed at a hosted free-tier API** (free Gemini / Groq-style tier, or
+       OpenRouter free models) — fastest to a working demo, no GPU, but rate-limited and
+       not truly "ours".
+    2. **Odysseus serving a local open model on a GPU box** — real ownership, materially
+       more cost.
+  Decide the value of A–C *first*; the hosting choice follows from that decision, it
+  should not drive it.
+
+**Suggested first step if we ever pursue this:** prototype **B** as a thin text
+companion grounded on synopsis + subtitles, running on a hosted free-tier model, before
+spending anything on self-hosting or realtime co-watch. Prove people want to talk to it
+before we pay to run it.
