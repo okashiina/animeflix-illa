@@ -6,6 +6,7 @@ import { useRouter } from 'next/router';
 import { SearchIcon } from '@heroicons/react/outline';
 
 const NAV_LINKS = [
+  { label: 'Home', href: '/home' },
   { label: 'Browse', href: '/browse' },
   { label: 'Schedule', href: '/schedule' },
 ];
@@ -38,7 +39,7 @@ const Header: React.FC<{}> = () => {
       }`}
     >
       <div className="flex h-16 w-full items-center gap-4 px-4 sm:px-6 lg:px-8">
-        <Link href="/" passHref>
+        <Link href="/home" passHref>
           <a
             className="flex items-center gap-2 transition active:scale-95"
             aria-label="kessoku moe home"

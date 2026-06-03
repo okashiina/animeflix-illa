@@ -16,6 +16,12 @@ Invoke these skills (Skill tool) before/while doing the matching work — not op
   Add `/taste-skill` or `/soft-skill` for visual-taste passes.
 - **Scraping / anti-bot / browser automation** (Option B source-service, provider
   extractors, Cloudflare/DDoS-Guard work): use `/playwright-cli` and `/web-scraping`.
+- **Copy / branding / marketing wording** (any user-facing UI copy, taglines,
+  headlines, CTAs, section labels, microcopy, brand voice): ALWAYS use
+  `/brand-copywriter` together with `/brand` and `/stop-slop`. Rules: copy is in
+  English (Indonesian only for video subtitles), brand-voiced (Bocchi / Kessoku
+  Band, "dark, cute, a little rock", stage metaphor), show-don't-tell with concrete
+  detail, no AI-slop / banned phrases, no em dashes. Don't claim unbuilt features.
 
 ## 3. Working style (from user feedback)
 - **Verify before claiming done.** Run `tsc`/`eslint`/build and check actual config

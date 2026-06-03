@@ -21,7 +21,7 @@ function MyApp({ Component, pageProps }: AppProps) {
     <>
       <DefaultSeo
         title="kessoku moe — watch anime free"
-        description="kessoku moe — stream anime shows, movies, and series free, ad-light, on your phone, tablet, or desktop. dark, gemoy, sedikit rock."
+        description="kessoku moe — stream anime shows, movies, and series free, ad-light, on your phone, tablet, or desktop. dark, cute, a little rock."
         additionalMetaTags={[
           {
             name: 'keywords',
