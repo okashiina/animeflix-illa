@@ -17,6 +17,9 @@ export const config = {
   breakerCooldownMs: num(process.env.BREAKER_COOLDOWN_MS, 2 * 60 * 1000),
   corsOrigins: (process.env.CORS_ORIGINS || '*').split(',').map((s) => s.trim()),
   openSubtitlesApiKey: process.env.OPENSUBTITLES_API_KEY || '',
+  // External subtitle sources (Phase 3). See docs/SUBTITLE-SOURCING-RESEARCH.md.
+  subdlApiKey: process.env.SUBDL_API_KEY || '', // Indonesian (id)
+  jimakuApiKey: process.env.JIMAKU_API_KEY || '', // Japanese (ja)
   userAgent:
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
     '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',

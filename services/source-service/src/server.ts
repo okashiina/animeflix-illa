@@ -5,7 +5,11 @@ import { resolve } from './resolver.js';
 import { handleHls } from './hlsProxy.js';
 import { snapshot } from './circuitBreaker.js';
 import { orderedProviders } from './providers/index.js';
-import type { Category } from './types.js';
+import {
+  resolveSubtitleTracks,
+  fetchSubtitleVtt,
+} from './subtitles/index.js';
+import type { Category, WatchParams } from './types.js';
 
 const app = Fastify({ logger: true });
 await app.register(cors, {
@@ -39,7 +43,13 @@ app.get('/watch', async (req) => {
     return { mode: 'embed', reason: 'missing anilistId/episode' };
   }
 
-  const result = await resolve({ anilistId, episode, category, titles });
+  const params: WatchParams = { anilistId, episode, category, titles };
+  // Resolve sources and external subtitle tracks together — subtitle lookup is
+  // independent of the video source, so it adds no latency and degrades to [].
+  const [result, subTracks] = await Promise.all([
+    resolve(params),
+    resolveSubtitleTracks(params).catch(() => []),
+  ]);
   if (!result) return { mode: 'embed' };
 
   // Rewrite each source through our HLS proxy so the browser can play it.
@@ -52,14 +62,36 @@ app.get('/watch', async (req) => {
     return { ...s, url: proxied };
   });
 
-  return { mode: 'direct', provider: result.provider, sources, subtitles: result.subtitles };
+  // Provider subtitles (e.g. a soft-sub stream's English VTT) plus our external
+  // tracks (Indonesian via subdl, Japanese via Jimaku), served through /subs so
+  // the file is fetched + converted to VTT lazily and from our own origin.
+  const external = subTracks.map((t) => ({
+    lang: t.lang,
+    label: t.label,
+    url:
+      `${base}/subs?src=${t.source}` +
+      `&ref=${encodeURIComponent(t.ref)}`,
+  }));
+  const subtitles = [...result.subtitles, ...external];
+
+  return { mode: 'direct', provider: result.provider, sources, subtitles };
 });
 
 app.get('/hls', handleHls);
 
-// Subtitles (Phase 3): OpenSubtitles (id/en) -> VTT, served from our domain.
+// Subtitles (Phase 3): fetch the upstream file (subdl zip / Jimaku file), convert
+// to WebVTT, and serve from our own domain. `ref` is host-restricted (SSRF guard).
 app.get('/subs', async (req, reply) => {
-  reply.code(501).send({ error: 'subtitles not implemented yet (Phase 3)' });
+  const q = req.query as Record<string, string>;
+  const ref = q.ref || '';
+  const source = q.src === 'jimaku' ? 'jimaku' : 'subdl';
+  if (!ref) return reply.code(400).send({ error: 'missing ref' });
+
+  const vtt = await fetchSubtitleVtt(source, ref);
+  if (!vtt) return reply.code(404).send({ error: 'subtitle unavailable' });
+
+  reply.header('Cache-Control', 'public, max-age=86400');
+  return reply.type('text/vtt; charset=utf-8').send(vtt);
 });
 
 app
