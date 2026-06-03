@@ -27,6 +27,15 @@ query animePage($id: Int, $perPage: Int) {
     status
     ...AnimeInfo
     ...AnimeBanner
+    relations {
+      edges {
+        relationType
+        node {
+          type
+          ...AnimeInfo
+        }
+      }
+    }
   }
 
   recommended: Page(perPage: $perPage) {

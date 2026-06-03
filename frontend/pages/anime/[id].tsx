@@ -5,6 +5,7 @@ import {
   AnimeBannerFragment,
   AnimeInfoFragment,
   MediaStatus,
+  MediaType,
 } from '@animeflix/api/aniList';
 import { EpisodesListFragment } from '@animeflix/api/kitsu';
 import { ClockIcon } from '@heroicons/react/outline';
@@ -13,12 +14,16 @@ import { NextSeo } from 'next-seo';
 
 import Banner from '@components/anime/Banner';
 import EpisodeSection from '@components/anime/EpisodeSection';
+import RelatedSection, {
+  type RelationItem,
+} from '@components/anime/RelatedSection';
 import Section from '@components/anime/Section';
 import Header from '@components/Header';
 
 interface AnimeProps {
   anime: AnimeInfoFragment & AnimeBannerFragment;
   recommended: AnimeInfoFragment[];
+  related: RelationItem[];
   episodes: EpisodesListFragment;
   status: MediaStatus | null;
   startDate: { year: number | null; month: number | null; day: number | null };
@@ -56,7 +61,36 @@ export const getServerSideProps: GetServerSideProps<AnimeProps> = async (
     episodes = await Promise.all([english, romaji]).then((r) => {
       return r[0].episodeCount > 0 ? r[0] : r[1];
     });
+
+    // Kitsu lag fallback: Kitsu often trails AniList for currently-airing
+    // titles — it may not list the show at all, or miss its newest episodes.
+    // AniList always knows how many have aired (nextAiringEpisode.episode - 1,
+    // or the final `episodes` total once finished), so take the larger count
+    // and keep whatever rich nodes Kitsu does have. A bare numbered entry is
+    // still fully playable: the watch page resolves sources by AniList id +
+    // episode number, not by Kitsu metadata.
+    const aired = data.Media.nextAiringEpisode
+      ? data.Media.nextAiringEpisode.episode - 1
+      : data.Media.episodes ?? 0;
+    if (aired > (episodes.episodeCount ?? 0)) {
+      episodes = {
+        episodeCount: aired,
+        episodes: episodes.episodes ?? { nodes: [] },
+      };
+    }
   }
+
+  // Related franchise entries (sequels, side stories, OVAs, ...). Keep only
+  // ANIME nodes — relations also point at the source manga/novel, which isn't
+  // watchable here. RelatedSection handles labelling, de-duping and ordering.
+  const related: RelationItem[] = (data.Media.relations?.edges ?? [])
+    .filter(
+      (e) => e && e.node && e.node.type === MediaType.Anime && e.relationType
+    )
+    .map((e) => ({
+      relationType: e.relationType as string,
+      node: e.node as AnimeInfoFragment,
+    }));
 
   return {
     props: {
@@ -64,6 +98,7 @@ export const getServerSideProps: GetServerSideProps<AnimeProps> = async (
       recommended: data.recommended.recommendations.map(
         (r) => r.mediaRecommendation
       ),
+      related,
       episodes,
       status: data.Media.status ?? null,
       startDate: {
@@ -142,6 +177,7 @@ const ComingSoon: React.FC<{ label: string | null }> = ({ label }) => (
 const Anime = ({
   anime,
   recommended,
+  related,
   episodes,
   status,
   startDate,
@@ -192,6 +228,8 @@ const Anime = ({
           ) : (
             <EmptyState message="No episodes found" />
           ))}
+
+        <RelatedSection items={related} />
 
         {recommended.length > 0 ? (
           <Section animeList={recommended} title="Recommended" />
