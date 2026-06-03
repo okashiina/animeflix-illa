@@ -18,6 +18,7 @@ import RelatedSection, {
   type RelationItem,
 } from '@components/anime/RelatedSection';
 import Section from '@components/anime/Section';
+import WatchlistButton from '@components/anime/WatchlistButton';
 import Header from '@components/Header';
 
 interface AnimeProps {
@@ -209,6 +210,12 @@ const Anime = ({
 
       <Header />
       <Banner anime={anime} />
+
+      {/* Action row under the key art — Watch lives in the banner CTA, so this
+          surfaces the "My List" save alongside it. */}
+      <div className="mx-auto mt-6 flex w-full max-w-screen-2xl flex-wrap gap-3 px-4 sm:px-6 lg:px-8">
+        <WatchlistButton id={anime.id} variant="labeled" />
+      </div>
 
       <main className="mx-auto w-full max-w-screen-2xl pb-20">
         {/* Don't show episode section if format is movie */}

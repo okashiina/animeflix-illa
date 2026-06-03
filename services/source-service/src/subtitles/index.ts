@@ -3,13 +3,19 @@ import { config } from '../config.js';
 import type { WatchParams } from '../types.js';
 import * as subdl from './subdl.js';
 import * as jimaku from './jimaku.js';
+import { translateVtt } from './translate.js';
 
-// External subtitle tracks (Phase 3): Indonesian via subdl, Japanese via Jimaku.
-// English comes free from soft-sub video providers, so it isn't sourced here.
-// The resolver returns track metadata; the actual VTT is fetched + converted
-// on demand by /subs (keeps /watch fast and lets the browser cache per track).
+// External subtitle tracks (Phase 3):
+//   • Indonesian (auto) — the Japanese (Jimaku) track machine-translated to id.
+//     Inherits Jimaku's perfect timing, so it fixes the drift subdl can't.
+//   • Indonesian — subdl's human translation (nicer text, Crunchyroll-timed → may drift).
+//   • Japanese — Jimaku, AniList-native, perfectly timed.
+//   • English — subdl.
+// The resolver returns track metadata; the actual VTT is fetched + converted (and,
+// for mt-*, translated) on demand by /subs, so /watch stays fast and each track
+// is cached independently.
 
-export type SubtitleSource = 'subdl' | 'jimaku';
+export type SubtitleSource = 'subdl' | 'jimaku' | 'mt-id';
 
 export interface SubtitleTrack {
   source: SubtitleSource;
@@ -34,25 +40,33 @@ export async function resolveSubtitleTracks(
   const cached = trackCache.get(key);
   if (cached) return cached;
 
-  const [indo, ja] = await Promise.all([
+  const [indo, en, ja] = await Promise.all([
     subdl.findIndo(params.titles, params.episode).catch(() => []),
+    subdl.findEnglish(params.titles, params.episode).catch(() => []),
     jimaku.findJapanese(params.anilistId, params.episode).catch(() => []),
   ]);
 
-  const tracks: SubtitleTrack[] = [
-    ...indo.map((t) => ({
-      source: 'subdl' as const,
-      lang: t.lang,
-      label: t.label,
-      ref: t.url,
-    })),
-    ...ja.map((t) => ({
-      source: 'jimaku' as const,
-      lang: t.lang,
-      label: t.label,
-      ref: t.url,
-    })),
-  ];
+  const tracks: SubtitleTrack[] = [];
+
+  // Indonesian (auto) first so it's the default id pick — it shares the Japanese
+  // track's perfect timing, where subdl's human file drifts vs the AnimePahe cut.
+  for (const t of ja) {
+    tracks.push({
+      source: 'mt-id',
+      lang: 'id',
+      label: 'Indonesian (auto)',
+      ref: t.url, // the Jimaku file; /subs fetches then translates ja → id
+    });
+  }
+  for (const t of indo) {
+    tracks.push({ source: 'subdl', lang: t.lang, label: t.label, ref: t.url });
+  }
+  for (const t of ja) {
+    tracks.push({ source: 'jimaku', lang: t.lang, label: t.label, ref: t.url });
+  }
+  for (const t of en) {
+    tracks.push({ source: 'subdl', lang: t.lang, label: t.label, ref: t.url });
+  }
 
   trackCache.set(key, tracks);
   return tracks;
@@ -78,11 +92,21 @@ export async function fetchSubtitleVtt(
   }
   if (!hostAllowed(host)) return null;
 
-  const cached = vttCache.get(ref);
+  // Key by source too: mt-id and jimaku share the same Jimaku `ref` but produce
+  // different VTT (translated vs original), so a ref-only key would collide.
+  const cacheKey = `${source}|${ref}`;
+  const cached = vttCache.get(cacheKey);
   if (cached) return cached;
 
-  const vtt =
-    source === 'jimaku' ? await jimaku.fetchVtt(ref) : await subdl.fetchVtt(ref);
-  if (vtt) vttCache.set(ref, vtt);
+  let vtt: string | null;
+  if (source === 'mt-id') {
+    const jp = await jimaku.fetchVtt(ref);
+    vtt = jp ? await translateVtt(jp, 'ja', 'id') : null;
+  } else if (source === 'jimaku') {
+    vtt = await jimaku.fetchVtt(ref);
+  } else {
+    vtt = await subdl.fetchVtt(ref);
+  }
+  if (vtt) vttCache.set(cacheKey, vtt);
   return vtt;
 }

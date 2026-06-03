@@ -9,6 +9,7 @@ fragment AnimeInfo on Media {
     medium
     large
   }
+  bannerImage
   format
   episodes
   duration

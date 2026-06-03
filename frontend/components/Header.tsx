@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { label: 'Home', href: '/home' },
   { label: 'Browse', href: '/browse' },
   { label: 'Schedule', href: '/schedule' },
+  { label: 'My List', href: '/watchlist' },
 ];
 
 const Header: React.FC<{}> = () => {

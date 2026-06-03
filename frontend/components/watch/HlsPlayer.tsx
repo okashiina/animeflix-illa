@@ -6,6 +6,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 
+import { getEntry, markWatched, savePosition } from '@utility/progress';
+
 // Our own player chrome for the self-hosted (Option B) HLS stream. Native
 // `<video controls>` can't be restyled and has no skip / PiP / settings, so we
 // hide it and draw a kessoku-styled control layer over the raw <video>:
@@ -34,6 +36,9 @@ interface HlsPlayerProps {
   onUseEmbed: () => void;
   onUnplayable: () => void;
   onNext?: () => void;
+  animeId?: number; // for watch-progress persistence (Continue watching)
+  episode?: number;
+  total?: number; // total episodes for the title (drives "finished" tracking)
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -302,6 +307,9 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   onUseEmbed,
   onUnplayable,
   onNext,
+  animeId,
+  episode,
+  total,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -324,6 +332,7 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   const [capBg, setCapBg] = useState<CapBg>(initial.current.capBg);
   const [subOffset, setSubOffset] = useState(initial.current.subOffset);
   const [capPos, setCapPos] = useState(initial.current.capPos);
+  const [capDragging, setCapDragging] = useState(false);
   const capDrag = useRef<{
     px: number;
     py: number;
@@ -374,6 +383,30 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
     let destroyed = false;
     let hls: { destroy: () => void } | null = null;
     let mediaRecover = 0;
+
+    // Direct (non-HLS) sources — e.g. AllAnime's proxied MP4 (/file?…) — play
+    // natively through the <video> element; hls.js only understands m3u8.
+    const isHlsSrc = /\/hls\?|\.m3u8(\?|$)/i.test(src);
+    if (!isHlsSrc) {
+      video.src = src;
+      const resumeNative = () => {
+        if (resumeTime.current > 0) video.currentTime = resumeTime.current;
+        if (wasPlaying.current) video.play().catch(() => undefined);
+      };
+      video.addEventListener('loadedmetadata', resumeNative, { once: true });
+      video.addEventListener('error', () => onUnplayableRef.current(), {
+        once: true,
+      });
+      return () => {
+        destroyed = true;
+        if (videoRef.current) {
+          resumeTime.current = videoRef.current.currentTime;
+          wasPlaying.current = !videoRef.current.paused;
+        }
+        video.removeAttribute('src');
+        video.load();
+      };
+    }
 
     import('hls.js').then(({ default: Hls }) => {
       if (destroyed || !videoRef.current) return;
@@ -503,6 +536,43 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   useEffect(() => {
     if (subIdx >= subtitles.length) setSubIdx(-1);
   }, [subtitles.length, subIdx]);
+
+  // ---- Watch progress ("Continue watching"). Persisted through the progress
+  // module (`@utility/progress`, keyed by AniList id). The player remounts per
+  // episode (the loading phase unmounts it), so seed the resume point on mount
+  // and persist as it plays. ----
+  useEffect(() => {
+    if (!animeId || !episode) return;
+    const e = getEntry(animeId);
+    resumeTime.current = e && e.ep === episode && e.sec > 5 ? e.sec : 0;
+  }, [animeId, episode]);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !animeId || !episode) return undefined;
+    let last = 0;
+    const persist = () => {
+      const t = v.currentTime;
+      const dur = Math.floor(v.duration) || 0;
+      // Within 90s of the end → treat as watched (drops it from "Continue watching").
+      if (dur && dur - t < 90) {
+        markWatched(animeId, episode, { total, dur });
+      } else if (t > 5) {
+        savePosition(animeId, { ep: episode, sec: Math.floor(t), dur, total });
+      }
+    };
+    const onTime = () => {
+      const now = Date.now();
+      if (now - last < 5000) return; // throttle writes to ~once per 5s
+      last = now;
+      persist();
+    };
+    v.addEventListener('timeupdate', onTime);
+    return () => {
+      v.removeEventListener('timeupdate', onTime);
+      persist(); // final write on episode change / unmount
+    };
+  }, [animeId, episode, total]);
 
   // ---- Subtitles: drive the native TextTracks but render cues ourselves so the
   // styling (size / colour / background) is entirely user-controlled. ----
@@ -712,6 +782,7 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
       w: r.width || 1,
       h: r.height || 1,
     };
+    setCapDragging(true);
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const onCapMove = (e: ReactPointerEvent) => {
@@ -725,6 +796,7 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   };
   const onCapUp = (e: ReactPointerEvent) => {
     capDrag.current = null;
+    setCapDragging(false);
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
@@ -792,14 +864,20 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
           </video>
 
           {/* Our own caption layer (native rendering is suppressed to 'hidden').
-              The box is draggable anywhere over the stage; default is bottom-centre. */}
-          {subIdx >= 0 && cueText && (
-            <div className="pointer-events-none absolute inset-0">
+              The box stays mounted whenever subtitles are on — even between lines —
+              so a drag survives cue-text changes; it sits above the controls (z-30)
+              so it's grabbable while paused. When paused on a gap (no current line) a
+              small handle appears so captions can still be repositioned anytime.
+              Default position is bottom-centre. */}
+          {subIdx >= 0 && (
+            <div className="pointer-events-none absolute inset-0 z-30">
               <span
                 onPointerDown={onCapDown}
                 onPointerMove={onCapMove}
                 onPointerUp={onCapUp}
-                className="pointer-events-auto absolute max-w-[90%] cursor-move touch-none select-none text-center font-semibold leading-snug"
+                className={`pointer-events-auto absolute max-w-[90%] touch-none select-none text-center font-semibold leading-snug ${
+                  capDragging ? 'cursor-grabbing' : 'cursor-grab'
+                }`}
                 style={{
                   ...(capPos
                     ? {
@@ -818,16 +896,27 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
                     CAP_SIZES[1].css,
                   whiteSpace: 'pre-line',
                   color: capColor === 'yellow' ? '#F2D43D' : '#F6F6F8',
-                  background: CAP_BG[capBg],
-                  padding: capBg === 'none' ? 0 : '0.12em 0.5em',
-                  borderRadius: 8,
-                  textShadow:
-                    capBg === 'none'
-                      ? '0 1px 3px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.95)'
-                      : 'none',
+                  // Background/shadow only when there's text — keep the box invisible
+                  // (and unobtrusive) between lines.
+                  ...(cueText
+                    ? {
+                        background: CAP_BG[capBg],
+                        padding: capBg === 'none' ? 0 : '0.12em 0.5em',
+                        borderRadius: 8,
+                        textShadow:
+                          capBg === 'none'
+                            ? '0 1px 3px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.95)'
+                            : 'none',
+                      }
+                    : null),
                 }}
               >
-                {cueText}
+                {cueText ||
+                  (!playing && (
+                    <span className="bg-black/55 inline-block whitespace-nowrap rounded-md border border-dashed border-white/40 px-2 py-0.5 text-xs font-medium text-white/75">
+                      ↔ drag to move captions
+                    </span>
+                  ))}
               </span>
             </div>
           )}

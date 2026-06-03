@@ -13,6 +13,15 @@ import HlsPlayer, { type Subtitle } from './HlsPlayer';
 
 const SOURCE_SERVICE = process.env.NEXT_PUBLIC_SOURCE_SERVICE_URL;
 
+// Direct-pipeline server choice. 'auto' = resolver's fallback chain; the others
+// force one provider so the user can test it (AllAnime CF-solves, so it's slower).
+const PROVIDER_PREF_KEY = 'kessoku.source.provider';
+const DIRECT_PROVIDERS = [
+  { id: 'auto', label: 'Auto' },
+  { id: 'animepahe', label: 'AnimePahe' },
+  { id: 'allanime', label: 'AllAnime' },
+] as const;
+
 interface Source {
   url: string;
   quality?: string;
@@ -37,6 +46,7 @@ const SourcePlayer: React.FC<{ titles: string[]; onNext?: () => void }> = ({
   const animeId = useSelector((store) => store.anime.anime);
   const episode = useSelector((store) => store.episode.episode);
   const useDub = useSelector((store) => store.videoSettings.useDub);
+  const totalEpisodes = useSelector((store) => store.gogoApi.totalEpisodes);
 
   const [phase, setPhase] = useState<'loading' | 'direct' | 'embed'>(
     SOURCE_SERVICE ? 'loading' : 'embed'
@@ -48,9 +58,30 @@ const SourcePlayer: React.FC<{ titles: string[]; onNext?: () => void }> = ({
   // Our HLS pipeline resolved, but the browser couldn't decode it (codec) —
   // we auto-dropped to embed and tell the user why.
   const [decodeFailed, setDecodeFailed] = useState(false);
+  // Which direct provider to resolve with: 'auto' = fallback chain, else forced.
+  const [pref, setPref] = useState<string>('auto');
 
   // Stable key for the titles array (a fresh array every render would loop).
   const titlesKey = titles.join(',');
+
+  // Restore the saved server preference (SSR can't read localStorage).
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem(PROVIDER_PREF_KEY);
+      if (v) setPref(v);
+    } catch {
+      /* localStorage unavailable */
+    }
+  }, []);
+
+  const choosePref = useCallback((id: string) => {
+    setPref(id);
+    try {
+      window.localStorage.setItem(PROVIDER_PREF_KEY, id);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // Resolve a direct source from our server. Keeps the resolved sources so the
   // user can switch back to our player after using embed.
@@ -70,7 +101,9 @@ const SourcePlayer: React.FC<{ titles: string[]; onNext?: () => void }> = ({
     const category = useDub ? 'dub' : 'sub';
     const url =
       `${SOURCE_SERVICE}/watch?anilistId=${animeId}&episode=${episode}` +
-      `&category=${category}&titles=${encodeURIComponent(titlesKey)}`;
+      `&category=${category}&titles=${encodeURIComponent(titlesKey)}${
+        pref !== 'auto' ? `&provider=${pref}` : ''
+      }`;
 
     fetch(url, { signal: controller.signal })
       .then((r) => r.json() as Promise<WatchResponse>)
@@ -91,12 +124,47 @@ const SourcePlayer: React.FC<{ titles: string[]; onNext?: () => void }> = ({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [animeId, episode, useDub, titlesKey]);
+  }, [animeId, episode, useDub, titlesKey, pref]);
 
-  // Re-resolve whenever the episode / dub changes.
+  // Re-resolve whenever the episode / dub / server choice changes.
   useEffect(() => resolve(), [resolve]);
 
   const hasOurPlayer = sources.length > 0;
+
+  // Server picker (direct pipeline only). Shown in every phase so the user can
+  // switch providers / test AllAnime even after a failure dropped them to embed.
+  const serverPicker = SOURCE_SERVICE ? (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <span className="text-faint">Server</span>
+      <div className="inline-flex overflow-hidden rounded-full border border-line/60">
+        {DIRECT_PROVIDERS.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => choosePref(p.id)}
+            className={`px-3 py-1 font-semibold transition ${
+              pref === p.id
+                ? 'bg-aurora text-accent-ink shadow-glow'
+                : 'text-muted hover:bg-fg/5 hover:text-fg'
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+      {phase === 'direct' && provider && (
+        <span className="text-faint">
+          playing via <span className="text-muted">{provider}</span>
+        </span>
+      )}
+      {pref === 'allanime' && (
+        <span className="text-faint">
+          AllAnime is the sharpest picture, but it takes a beat longer to start
+          (~30 to 60s on the first load)
+        </span>
+      )}
+    </div>
+  ) : null;
 
   // ---- Embed view (manual fallback or resolve/decode failure) ----
   if (phase === 'embed') {
@@ -128,6 +196,7 @@ const SourcePlayer: React.FC<{ titles: string[]; onNext?: () => void }> = ({
           </button>
           <span>{switchHint}</span>
         </div>
+        {serverPicker}
       </div>
     );
   }
@@ -150,25 +219,32 @@ const SourcePlayer: React.FC<{ titles: string[]; onNext?: () => void }> = ({
         >
           Taking too long? Watch on an embed server instead
         </button>
+        {serverPicker}
       </div>
     );
   }
 
   // ---- Direct (our) player ----
   return (
-    <HlsPlayer
-      sources={sources}
-      qIdx={qIdx}
-      onQuality={setQIdx}
-      provider={provider}
-      subtitles={subtitles}
-      onUseEmbed={() => setPhase('embed')}
-      onUnplayable={() => {
-        setDecodeFailed(true);
-        setPhase('embed');
-      }}
-      onNext={onNext}
-    />
+    <div className="space-y-2.5">
+      <HlsPlayer
+        sources={sources}
+        qIdx={qIdx}
+        onQuality={setQIdx}
+        provider={provider}
+        subtitles={subtitles}
+        onUseEmbed={() => setPhase('embed')}
+        onUnplayable={() => {
+          setDecodeFailed(true);
+          setPhase('embed');
+        }}
+        onNext={onNext}
+        animeId={animeId}
+        episode={episode}
+        total={totalEpisodes}
+      />
+      {serverPicker}
+    </div>
   );
 };
 

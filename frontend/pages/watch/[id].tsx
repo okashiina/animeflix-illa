@@ -14,6 +14,7 @@ import { NextSeo } from 'next-seo';
 import RelatedSection, {
   type RelationItem,
 } from '@components/anime/RelatedSection';
+import WatchlistButton from '@components/anime/WatchlistButton';
 import Genre from '@components/Genre';
 import Header from '@components/Header';
 import progressBar from '@components/Progress';
@@ -25,6 +26,7 @@ import { setAnime } from '@slices/anime';
 import { setEpisode } from '@slices/episode';
 import { setTotalEpisodes } from '@slices/gogoApi';
 import { initialiseStore, useDispatch, useSelector } from '@store/store';
+import { getResumeEpisode } from '@utility/progress';
 import { convertToDate, convertToTime } from '@utility/time';
 import { arrayToString } from '@utility/utils';
 
@@ -99,12 +101,8 @@ const Watch = ({
     // only run when the initial episode value was not supplied
     if (routerRef.current.query.episode) return;
 
-    // get the saved episode
-    const savedState = localStorage.getItem(`Anime${animeId}`) || '1-0';
-    const savedEpisode = savedState.split('-').map((v) => parseInt(v, 10))[0];
-
-    // update the episode
-    dispatch(setEpisode(savedEpisode));
+    // resume from the saved progress entry (defaults to episode 1)
+    dispatch(setEpisode(getResumeEpisode(animeId)));
   }, [animeId, dispatch]);
 
   // update the router url
@@ -183,9 +181,12 @@ const Watch = ({
                   Episode {episode}
                 </p>
               )}
-              <h1 className="mt-1 font-display text-2xl font-bold leading-tight text-fg sm:text-3xl">
-                {anime.title.romaji || anime.title.english}
-              </h1>
+              <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
+                <h1 className="font-display text-2xl font-bold leading-tight text-fg sm:text-3xl">
+                  {anime.title.romaji || anime.title.english}
+                </h1>
+                <WatchlistButton id={anime.id} variant="labeled" />
+              </div>
             </div>
 
             {anime.genres?.length > 0 && (

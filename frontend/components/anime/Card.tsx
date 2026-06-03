@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { AnimeInfoFragment } from '@animeflix/api/aniList';
 import { PlayIcon } from '@heroicons/react/solid';
 
+import WatchlistButton from '@components/anime/WatchlistButton';
 import { base64SolidImage } from '@utility/image';
 
 export interface CardProps {
@@ -43,6 +44,12 @@ const Card: React.FC<CardProps> = ({ anime }) => {
                 {anime.meanScore}%
               </span>
             )}
+
+            {/* Bookmark overlay, mirroring the score badge top-right. Lives inside
+                the card's <a>; the button stops propagation so it won't navigate. */}
+            <div className="pointer-events-auto absolute left-2 top-2 opacity-0 transition group-hover:opacity-100">
+              <WatchlistButton id={anime.id} variant="icon" />
+            </div>
 
             <span className="absolute inset-0 flex items-center justify-center opacity-0 transition duration-300 group-hover:opacity-100">
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-aurora text-accent-ink shadow-glow">

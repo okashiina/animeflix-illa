@@ -6,12 +6,22 @@ import { sourceCache, sourceKey } from './cache.js';
 // Fallback chain (SOP #1 + #2): try providers in priority order, skipping any with
 // an open breaker. First playable result wins and is cached. If none succeed the
 // caller serves embed fallback so the site never goes dark.
-export async function resolve(params: WatchParams): Promise<ResolveResult | null> {
-  const key = sourceKey(params.anilistId, params.episode, params.category);
+// `only` forces a single provider (the frontend's "Server: AnimePahe/AllAnime" pick),
+// so the user can test one directly instead of getting the chain's first hit.
+export async function resolve(
+  params: WatchParams,
+  only?: string
+): Promise<ResolveResult | null> {
+  const key =
+    sourceKey(params.anilistId, params.episode, params.category) +
+    (only ? `:${only}` : '');
   const cached = sourceCache.get(key);
   if (cached) return cached;
 
-  for (const provider of orderedProviders) {
+  const providers = only
+    ? orderedProviders.filter((p) => p.id === only)
+    : orderedProviders;
+  for (const provider of providers) {
     if (isOpen(provider.id)) continue;
     try {
       const result = await provider.resolve(params);

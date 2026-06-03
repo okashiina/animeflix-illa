@@ -24,13 +24,16 @@ export interface SubtitleRef {
 }
 
 /**
- * Find an Indonesian track for one episode. Tries each candidate title until one
- * returns ID subtitles. NOTE: query `languages=ID` alone — a combined ID,EN lets
- * English fill the 30-row page and hide the Indonesian rows.
+ * Find one language track for one episode. Tries each candidate title until one
+ * returns subtitles in `apiLang`. NOTE: query a single `languages=` value — a
+ * combined ID,EN lets one language fill the 30-row page and hide the other's rows.
  */
-export async function findIndo(
+async function findLang(
   titles: string[],
-  episode: number
+  episode: number,
+  apiLang: string, // subdl code, e.g. "ID" / "EN"
+  outLang: string, // ISO code we expose, e.g. "id" / "en"
+  label: string
 ): Promise<SubtitleRef[]> {
   if (!config.subdlApiKey) return [];
 
@@ -38,7 +41,7 @@ export async function findIndo(
     if (!title) continue;
     const params = new URLSearchParams({
       film_name: title,
-      languages: 'ID',
+      languages: apiLang,
       subs_per_page: '30',
       api_key: config.subdlApiKey,
     });
@@ -50,7 +53,7 @@ export async function findIndo(
       });
       const body = (await res.json()) as { subtitles?: SubdlSub[] };
       subs = (body.subtitles || []).filter(
-        (s) => String(s.language).toUpperCase() === 'ID' && s.url
+        (s) => String(s.language).toUpperCase() === apiLang && s.url
       );
     } catch {
       continue;
@@ -66,10 +69,26 @@ export async function findIndo(
     if (!pick?.url) continue;
 
     const url = pick.url.startsWith('http') ? pick.url : `${DL}${pick.url}`;
-    return [{ lang: 'id', label: 'Indonesian', url }];
+    return [{ lang: outLang, label, url }];
   }
 
   return [];
+}
+
+/** Indonesian (id) track. */
+export function findIndo(
+  titles: string[],
+  episode: number
+): Promise<SubtitleRef[]> {
+  return findLang(titles, episode, 'ID', 'id', 'Indonesian');
+}
+
+/** English (en) track. */
+export function findEnglish(
+  titles: string[],
+  episode: number
+): Promise<SubtitleRef[]> {
+  return findLang(titles, episode, 'EN', 'en', 'English');
 }
 
 /** Download a subdl zip, pick the subtitle file, and convert it to WebVTT. */

@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import { config } from './config.js';
 import { resolve } from './resolver.js';
 import { handleHls } from './hlsProxy.js';
+import { handleFile } from './fileProxy.js';
 import { snapshot } from './circuitBreaker.js';
 import { orderedProviders } from './providers/index.js';
 import {
@@ -44,10 +45,13 @@ app.get('/watch', async (req) => {
   }
 
   const params: WatchParams = { anilistId, episode, category, titles };
+  // Optional forced provider (frontend "Server" picker): resolve only that one so the
+  // user can test e.g. AllAnime directly. Unknown/absent => normal fallback chain.
+  const only = ['animepahe', 'allanime'].includes(q.provider) ? q.provider : undefined;
   // Resolve sources and external subtitle tracks together — subtitle lookup is
   // independent of the video source, so it adds no latency and degrades to [].
   const [result, subTracks] = await Promise.all([
-    resolve(params),
+    resolve(params, only),
     resolveSubtitleTracks(params).catch(() => []),
   ]);
   if (!result) return { mode: 'embed' };
@@ -56,9 +60,16 @@ app.get('/watch', async (req) => {
   const base = `${req.protocol}://${req.headers.host}`;
   const sources = result.sources.map((s) => {
     const ref = s.headers?.Referer || result.headers?.Referer || '';
-    const proxied = s.isM3U8
-      ? `${base}/hls?url=${encodeURIComponent(s.url)}&ref=${encodeURIComponent(ref)}`
-      : s.url;
+    let proxied: string;
+    if (s.isM3U8) {
+      proxied = `${base}/hls?url=${encodeURIComponent(s.url)}&ref=${encodeURIComponent(ref)}`;
+    } else if (ref) {
+      // Direct file (e.g. AllAnime's Referer-gated fast4speed MP4): proxy it so we
+      // can attach the Referer and forward Range requests for seeking.
+      proxied = `${base}/file?url=${encodeURIComponent(s.url)}&ref=${encodeURIComponent(ref)}`;
+    } else {
+      proxied = s.url;
+    }
     return { ...s, url: proxied };
   });
 
@@ -78,13 +89,14 @@ app.get('/watch', async (req) => {
 });
 
 app.get('/hls', handleHls);
+app.get('/file', handleFile);
 
 // Subtitles (Phase 3): fetch the upstream file (subdl zip / Jimaku file), convert
 // to WebVTT, and serve from our own domain. `ref` is host-restricted (SSRF guard).
 app.get('/subs', async (req, reply) => {
   const q = req.query as Record<string, string>;
   const ref = q.ref || '';
-  const source = q.src === 'jimaku' ? 'jimaku' : 'subdl';
+  const source = ['jimaku', 'mt-id'].includes(q.src) ? q.src : 'subdl';
   if (!ref) return reply.code(400).send({ error: 'missing ref' });
 
   const vtt = await fetchSubtitleVtt(source, ref);

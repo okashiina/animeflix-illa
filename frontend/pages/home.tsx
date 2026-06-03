@@ -1,14 +1,13 @@
-import { useEffect, useState } from 'react';
-
 import { InferGetServerSidePropsType } from 'next';
 import Link from 'next/link';
 
-import { getAnimeByIds } from '@animeflix/api';
 import { AnimeInfoFragment } from '@animeflix/api/aniList';
 import { ArrowRightIcon } from '@heroicons/react/outline';
 import { NextSeo } from 'next-seo';
 
 import AiringCard from '@components/anime/AiringCard';
+import ContinueWatchingRail from '@components/anime/ContinueWatchingRail';
+import MyListRail from '@components/anime/MyListRail';
 import Section from '@components/anime/Section';
 import Spotlight from '@components/anime/Spotlight';
 import Footer from '@components/Footer';
@@ -78,22 +77,6 @@ const Home = ({
 }: InferGetServerSidePropsType<typeof getServerSideProps>) => {
   progressBar.finish();
 
-  const [recentlyWatched, setRecentlyWatched] = useState<AnimeInfoFragment[]>(
-    []
-  );
-
-  useEffect(() => {
-    const ids = Object.keys(localStorage)
-      .filter((key) => key.startsWith('Anime'))
-      .map((key) => parseInt(key.replace('Anime', ''), 10));
-
-    if (ids.length === 0) return;
-
-    getAnimeByIds({ perPage: 12, page: 1, ids })
-      .then((data) => setRecentlyWatched(data.Page.media))
-      .catch(() => undefined);
-  }, []);
-
   return (
     <>
       <NextSeo
@@ -106,11 +89,13 @@ const Home = ({
       {spotlight.length > 0 && <Spotlight items={spotlight} />}
 
       <div className="pb-2">
-        {recentlyWatched.length > 0 && (
-          <Reveal>
-            <Section title="Continue watching" animeList={recentlyWatched} />
-          </Reveal>
-        )}
+        <Reveal>
+          <ContinueWatchingRail />
+        </Reveal>
+
+        <Reveal>
+          <MyListRail />
+        </Reveal>
 
         {trending.length > 0 && (
           <Reveal>

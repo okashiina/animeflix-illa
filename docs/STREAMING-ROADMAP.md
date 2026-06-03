@@ -115,10 +115,18 @@ Railway datacenter IPs are heavily challenged. Options, cheapest→most robust:
   packages still install). **HiAnime/Zoro via `aniwatch` is the only true soft-sub
   source** (returns separate multi-language WebVTT) → implement as
   `providers/hianime.ts`, but its page hosts are ISP-blocked from the laptop
-  (522 / SNI hang), so extraction is **VPS-gated**. **AllAnime** (ani-cli
-  AES-256-CTR method, actively patched) is the healthiest surviving extractor but
-  **hardsub** — use for coverage/fallback, not subtitle styling. AnimePahe stays the
-  always-on hardsub baseline.
+  (522 / SNI hang), so extraction is **VPS-gated** — and per the 2026 provider
+  re-survey ([PROVIDER-SHORTLIST.md](PROVIDER-SHORTLIST.md)) HiAnime DIED ~2026-03-13
+  and AnimeKai 2026-05-10, so the soft-sub dream is effectively dead and the VPS case
+  is now low-value (don't push it). **AllAnime — DONE & VERIFIED LIVE (2026-06-03),
+  wired as fallback** (`providers/allanime.ts`): CF-only (FlareSolverr clears it, not
+  SNI-blocked). Working recipe = full-query search + **persisted-query HASH** for the
+  episode (full query trips a server bug) + **AES-256-CTR decrypt of `data.tobeparsed`**
+  (key `SHA256("Xot36i3lK3:v1")`) + Referer `youtu-chan.com`; reliable source is its
+  fast4speed CDN **direct MP4** (hardsub, Referer-gated) served via the new **`/file`
+  Range proxy** (`src/fileProxy.ts`); player got a native-`<video>` path for non-HLS.
+  Full method in [ALLANIME-PROVIDER.md](ALLANIME-PROVIDER.md) §0. AnimePahe (HLS, fast)
+  stays primary; AllAnime is the coverage/dub fallback (`PROVIDERS=animepahe,allanime`).
 - **Phase 3 — Subtitles — BUILT & VERIFIED (2026-06-03).** Indonesian (subdl) +
   Japanese (Jimaku) external WebVTT tracks: `source-service/src/subtitles/*`
   resolves + episode-matches, downloads, unzips, converts ASS/SRT→VTT (LRU-cached,
@@ -137,10 +145,18 @@ Railway datacenter IPs are heavily challenged. Options, cheapest→most robust:
   JJK, Demon Slayer, Spy×Family, Mushoku Tensei, Oshi no Ko, Solo Leveling, …),
   thin-to-none for old classics. Pipeline: query `languages=ID` by title → download
   zip → unzip → ASS/SRT→VTT server-side → cache → player `subtitles` prop (works on
-  the laptop today, overlaid even on AnimePahe's hardsub stream). MT stays the
-  optional long-tail fallback. **Keys obtained: Jimaku + subdl — stored in
-  `services/source-service/.env` (gitignored).** OpenSubtitles deprioritized
-  (IMDb-mapping pain + ~20 downloads/day cap).
+  the laptop today, overlaid even on AnimePahe's hardsub stream). **Keys obtained:
+  Jimaku + subdl — stored in `services/source-service/.env` (gitignored).**
+  OpenSubtitles deprioritized (IMDb-mapping pain + ~20 downloads/day cap).
+  **UPDATE 2026-06-03 — two tracks added & VERIFIED LIVE:** (a) **Indonesian (auto)** —
+  subdl's Indonesian is Crunchyroll-timed and drifts tens of seconds vs the AnimePahe
+  cut (not a constant offset → not auto-correctable), so we **machine-translate the
+  perfectly-timed Japanese (Jimaku) track → Indonesian** (`src/subtitles/translate.ts`,
+  keyless Google gtx endpoint, batched + cached); it inherits perfect timing. Listed
+  first as the default `id` pick; subdl's human "Indonesian" kept as the nicer-text
+  alt. (b) **English** via subdl (`findEnglish`, `languages=EN`). Frieren ep1 now
+  serves 4 tracks: Indonesian (auto) [351 cues, perfect timing], Indonesian, Japanese,
+  English — all confirmed on the running container.
 - **Phase 4 — UI redesign** (now prioritized FIRST — free, high-value, no source
   dependency). Rebuild watch/home/browse UI in-repo on the existing embed playback,
   using the mandatory UI/UX skills (CLAUDE.md). Player lib decided here.
@@ -228,9 +244,17 @@ Crunchyroll Indonesian lagged ~30s on the OP). The clean fix (no drift, no burne
 English underneath) is a soft-sub video source = HiAnime, which is VPS-gated.
 
 **Backlog (next phases):**
-1. **Watch history** — track last-watched episode + resume timestamp ("continue
-   watching"). Build on the existing `Anime{id}="{ep}-{sec}"` localStorage record
-   (already written in `watch/[id].tsx`).
+1. **Watch history + Library — DONE (2026-06-03), a Tier-1 (COMPETITIVE-ANALYSIS)
+   local layer; precursor to AniList OAuth sync.** Replaced the flat `Anime{id}`
+   key with reactive localStorage stores `kessoku.progress.v1` +
+   `kessoku.watchlist.v1` (`frontend/utility/{externalStore,progress,watchlist}.ts`
+   + `useSyncExternalStore` hooks), with one-time legacy migration. Shipped:
+   watched-episode indicator (auto + manual toggle) in the episode grid; Netflix-style
+   landscape Continue Watching cards (progress bar, resume, remove) on home; a
+   Watchlist ("My List") — bookmark on every Card + detail + watch page, a
+   `/watchlist` page (status tabs), a home rail, a header nav link. **Only the direct
+   player records progress** (embed iframe is cross-origin), so Continue Watching is
+   sparse on the embed-only Railway deploy; watchlist + mark-watched work everywhere.
 2. **Hotkey `n` → next episode** (folded into the player keyboard now).
 3. **Skip-intro** — needs intro/outro markers (aniskip API, keyed by MAL id).
 4. **Indonesian subtitles — BUILT (2026-06-03).** subdl (Indonesian) + Jimaku

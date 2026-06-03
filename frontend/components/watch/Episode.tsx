@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 import type { FillerKind } from '@animeflix/api';
+import { CheckCircleIcon } from '@heroicons/react/solid';
 
+import useWatchedEpisodes from '@hooks/useWatchedEpisodes';
 import { setEpisode } from '@slices/episode';
 import { useDispatch, useSelector } from '@store/store';
+import { markWatched, unmarkWatched } from '@utility/progress';
 
 // Only the "notable" kinds get a marker bar; the canon majority stays unmarked
 // so filler/mixed actually stand out at a glance.
@@ -81,7 +84,29 @@ export interface EpisodeProps {
 const Episode: React.FC<EpisodeProps> = ({ title, altTitle }) => {
   const episodes = useSelector((store) => store.gogoApi.totalEpisodes);
   const current = useSelector((store) => store.episode.episode);
+  const animeId = useSelector((store) => store.anime.anime);
   const dispatch = useDispatch();
+
+  // Live set of episodes the viewer has finished (or hand-marked).
+  const watched = new Set(useWatchedEpisodes(animeId));
+
+  // Toggle a single episode's watched state. Auto-set when the player nears the
+  // end of an episode; this is the manual override (long-press / right-click).
+  const toggle = (v: number) => {
+    if (watched.has(v)) unmarkWatched(animeId, v);
+    else markWatched(animeId, v, { total: episodes });
+  };
+
+  // ~500ms press-and-hold to toggle watched, the touch-friendly twin of the
+  // right-click menu. Cancelled if the finger lifts, leaves, or drifts.
+  const pressTimer = useRef<ReturnType<typeof setTimeout>>();
+  const clearPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = undefined;
+    }
+  };
+  useEffect(() => clearPress, []);
 
   const [currentPage, setPage] = useState(1);
   const [filler, setFiller] = useState<Record<number, FillerKind>>({});
@@ -147,6 +172,10 @@ const Episode: React.FC<EpisodeProps> = ({ title, altTitle }) => {
         </div>
       )}
 
+      <p className="mb-3 text-xs text-faint">
+        Long-press or right-click an episode to mark it watched.
+      </p>
+
       {pages > 1 && (
         <div className="mb-3 flex flex-wrap gap-2">
           {new Array(pages).fill(1).map((_v, i) => (
@@ -167,19 +196,52 @@ const Episode: React.FC<EpisodeProps> = ({ title, altTitle }) => {
           .map((v) => {
             const kind = filler[v];
             const bar = kind ? BAR_COLOR[kind] : '';
+            const isCurrent = v === current;
+            const isWatchedEp = watched.has(v);
+            let epTitle: string | undefined;
+            if (kind) {
+              epTitle = `${KIND_LABEL[kind]}${isWatchedEp ? ' · watched' : ''}`;
+            } else if (isWatchedEp) {
+              epTitle = 'Watched';
+            }
+            const startPress = () => {
+              clearPress();
+              pressTimer.current = setTimeout(() => {
+                clearPress();
+                toggle(v);
+              }, 500);
+            };
             return (
               <button
                 key={v}
                 onClick={() => dispatch(setEpisode(v))}
-                aria-current={v === current}
-                title={kind ? KIND_LABEL[kind] : undefined}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  toggle(v);
+                }}
+                onPointerDown={startPress}
+                onPointerUp={clearPress}
+                onPointerLeave={clearPress}
+                onPointerMove={clearPress}
+                aria-current={isCurrent}
+                title={epTitle}
                 className={`relative flex h-10 items-center justify-center rounded-md text-sm tabular-nums transition duration-150 active:scale-95 ${
-                  v === current
+                  isCurrent
                     ? 'bg-aurora font-semibold text-accent-ink shadow-glow'
-                    : 'bg-surface text-muted hover:bg-surface-2 hover:text-fg'
+                    : `bg-surface text-muted hover:bg-surface-2 hover:text-fg ${
+                        isWatchedEp ? 'opacity-60 ring-1 ring-accent/40' : ''
+                      }`
                 }`}
               >
                 {v}
+                {isWatchedEp && (
+                  <CheckCircleIcon
+                    className={`absolute right-0.5 top-0.5 h-3.5 w-3.5 ${
+                      isCurrent ? 'text-accent-ink/90' : 'text-accent'
+                    }`}
+                    aria-hidden
+                  />
+                )}
                 {bar && (
                   <span
                     className={`absolute inset-x-1.5 bottom-1 h-[3px] rounded-full ${bar}`}
