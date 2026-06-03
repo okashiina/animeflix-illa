@@ -21,7 +21,11 @@ export async function resolve(params: WatchParams): Promise<ResolveResult | null
         return result;
       }
       // "no source" is not a hard failure; just try the next provider.
-    } catch {
+      // eslint-disable-next-line no-console
+      else console.warn(`[resolver] ${provider.id}: no sources`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[resolver] ${provider.id} failed:`, err instanceof Error ? err.message : err);
       recordFailure(provider.id);
     }
   }

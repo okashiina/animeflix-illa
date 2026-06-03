@@ -1,4 +1,3 @@
-import { Readable } from 'node:stream';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { config } from './config.js';
 
@@ -63,7 +62,9 @@ export async function handleHls(req: FastifyRequest, reply: FastifyReply): Promi
     return;
   }
 
-  // Binary segment / key: stream straight through.
+  // Binary segment / key: buffer + send. (Streaming via Readable.fromWeb returned
+  // an empty body here; segments are small ~200KB so buffering is fine + robust.)
+  const buf = Buffer.from(await upstream.arrayBuffer());
   reply.header('content-type', ct || 'application/octet-stream');
-  reply.send(Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]));
+  reply.send(buf);
 }

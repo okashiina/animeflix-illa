@@ -11,8 +11,8 @@ import Genre from '@components/Genre';
 import Header from '@components/Header';
 import progressBar from '@components/Progress';
 import RecommendationCard from '@components/watch/Card';
-import EmbedPlayer from '@components/watch/EmbedPlayer';
 import Episode from '@components/watch/Episode';
+import SourcePlayer from '@components/watch/SourcePlayer';
 import WatchControls from '@components/watch/WatchControls';
 import { setAnime } from '@slices/anime';
 import { setEpisode } from '@slices/episode';
@@ -145,7 +145,11 @@ const Watch = ({
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8">
           {/* Player column */}
           <div className="min-w-0">
-            <EmbedPlayer />
+            <SourcePlayer
+              titles={[anime.title.romaji, anime.title.english].filter(
+                (t): t is string => Boolean(t)
+              )}
+            />
 
             <div className="mt-5">
               {anime.format !== 'MOVIE' && (

@@ -101,9 +101,11 @@ Railway datacenter IPs are heavily challenged. Options, cheapest→most robust:
 ## 5. Phases & decision gates
 
 - **Phase 0 — DONE.** Embed switcher live = safety net.
-- **Phase 1 — PoC. PARTIALLY RUN (2026-06-02) → Option B parked, see below.**
-  source-service skeleton exists (provider interface + resolver + hls-proxy + embed
-  fallback). The AllAnime extractor was probed live (not yet implemented in-service).
+- **Phase 1 — PoC: SUCCESS (2026-06-03).** End-to-end playable m3u8 obtained through
+  our own pipeline on the user's laptop, free, via **FlareSolverr (Docker) + AnimePahe**.
+  See §5b. Still TODO: wire the AnimePahe extractor into source-service `providers/` +
+  HLS proxy (inject `Referer: https://kwik.cx/`) + a Vidstack player on the watch page
+  (`mode:'direct'`), keeping the embed switcher as fallback.
 - **Phase 2 — Resilience.** Add 2–3 fallback providers + caching + circuit breakers
   + canary monitoring + `/status`. Gate: canary >95% green for a week.
 - **Phase 3 — Subtitles.** OpenSubtitles (id) → VTT, wired into our player.

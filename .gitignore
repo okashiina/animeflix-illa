@@ -51,3 +51,4 @@ docs/kessoku moe brand guide/
 
 # scratch: PoC + screenshot artifacts
 services/source-service/scripts/*.png
+services/source-service/scripts/kwik-*

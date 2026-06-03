@@ -13,6 +13,7 @@ await app.register(cors, {
 });
 
 const startedAt = Date.now();
+app.log.info({ flaresolverr: config.flaresolverrUrl, providers: config.providers }, 'config');
 
 app.get('/health', async () => ({ ok: true }));
 

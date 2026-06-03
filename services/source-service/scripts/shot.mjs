@@ -62,6 +62,7 @@ async function main() {
         await page.waitForTimeout(500);
       }
       await page.waitForTimeout(1200); // let fonts + reveal settle
+      if (process.env.EXTRA_WAIT) await page.waitForTimeout(Number(process.env.EXTRA_WAIT));
       const file = `c:\\Projects\\animeflix-main\\services\\source-service\\scripts\\shot-${NAME}-${vp.tag}.png`;
       await page.screenshot({
         path: file,
