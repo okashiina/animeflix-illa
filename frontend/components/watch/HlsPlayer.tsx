@@ -66,6 +66,7 @@ interface Prefs {
   capColor: CapColor;
   capBg: CapBg;
   subOffset: number; // subtitle delay in seconds (+ = subs later)
+  capPos: { x: number; y: number } | null; // drag position (% of stage); null = default bottom-centre
 }
 
 const loadPrefs = (): Prefs => {
@@ -78,6 +79,7 @@ const loadPrefs = (): Prefs => {
     capColor: 'white',
     capBg: 'semi',
     subOffset: 0,
+    capPos: null,
   };
   if (typeof window === 'undefined') return base;
   try {
@@ -321,6 +323,15 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   const [capColor, setCapColor] = useState<CapColor>(initial.current.capColor);
   const [capBg, setCapBg] = useState<CapBg>(initial.current.capBg);
   const [subOffset, setSubOffset] = useState(initial.current.subOffset);
+  const [capPos, setCapPos] = useState(initial.current.capPos);
+  const capDrag = useRef<{
+    px: number;
+    py: number;
+    sx: number;
+    sy: number;
+    w: number;
+    h: number;
+  } | null>(null);
 
   const [playing, setPlaying] = useState(false);
   const [waiting, setWaiting] = useState(true);
@@ -346,12 +357,13 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
         capColor,
         capBg,
         subOffset,
+        capPos,
       };
       window.localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
     } catch {
       /* ignore */
     }
-  }, [skip, rate, volume, muted, capSize, capColor, capBg, subOffset]);
+  }, [skip, rate, volume, muted, capSize, capColor, capBg, subOffset, capPos]);
 
   // ---- hls.js wiring (codec shim + media-error recovery + embed fallback) ----
   useEffect(() => {
@@ -683,6 +695,43 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
     </button>
   );
 
+  // Drag the caption box anywhere over the video (YouTube-style); position is a
+  // percentage of the stage so it survives resize / fullscreen, and persists.
+  const onCapDown = (e: ReactPointerEvent) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const r = stage.getBoundingClientRect();
+    const start = capPos ?? { x: 50, y: 84 };
+    capDrag.current = {
+      px: e.clientX,
+      py: e.clientY,
+      sx: start.x,
+      sy: start.y,
+      w: r.width || 1,
+      h: r.height || 1,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onCapMove = (e: ReactPointerEvent) => {
+    const d = capDrag.current;
+    if (!d) return;
+    const clamp = (v: number) => Math.min(95, Math.max(5, v));
+    setCapPos({
+      x: clamp(d.sx + ((e.clientX - d.px) / d.w) * 100),
+      y: clamp(d.sy + ((e.clientY - d.py) / d.h) * 100),
+    });
+  };
+  const onCapUp = (e: ReactPointerEvent) => {
+    capDrag.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const shortcuts: [string[], string][] = [
     [['Space', 'K'], 'Play / pause'],
     [['J', '←'], `Back ${skip}s`],
@@ -742,16 +791,28 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
             ))}
           </video>
 
-          {/* Our own caption layer (native rendering is suppressed to 'hidden'). */}
+          {/* Our own caption layer (native rendering is suppressed to 'hidden').
+              The box is draggable anywhere over the stage; default is bottom-centre. */}
           {subIdx >= 0 && cueText && (
-            <div
-              className={`pointer-events-none absolute inset-x-0 flex justify-center px-6 text-center transition-all duration-200 ${
-                chromeVisible ? 'bottom-[16%]' : 'bottom-[7%]'
-              }`}
-            >
+            <div className="pointer-events-none absolute inset-0">
               <span
-                className="max-w-[90%] font-semibold leading-snug"
+                onPointerDown={onCapDown}
+                onPointerMove={onCapMove}
+                onPointerUp={onCapUp}
+                className="pointer-events-auto absolute max-w-[90%] cursor-move touch-none select-none text-center font-semibold leading-snug"
                 style={{
+                  ...(capPos
+                    ? {
+                        left: `${capPos.x}%`,
+                        top: `${capPos.y}%`,
+                        transform: 'translate(-50%, -50%)',
+                      }
+                    : {
+                        left: '50%',
+                        bottom: chromeVisible ? '16%' : '7%',
+                        transform: 'translateX(-50%)',
+                        transition: 'bottom 0.2s ease',
+                      }),
                   fontSize:
                     CAP_SIZES.find((c) => c.k === capSize)?.css ??
                     CAP_SIZES[1].css,
@@ -1077,6 +1138,21 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
                               {menuChip('None', capBg === 'none', () =>
                                 setCapBg('none')
                               )}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                              Caption position
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {capPos
+                                ? menuChip('Reset to bottom', false, () =>
+                                    setCapPos(null)
+                                  )
+                                : null}
+                              <span className="text-[11px] text-faint">
+                                Drag the caption to move it
+                              </span>
                             </div>
                           </div>
                         </div>
