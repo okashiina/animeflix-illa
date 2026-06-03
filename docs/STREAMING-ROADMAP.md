@@ -119,7 +119,16 @@ Railway datacenter IPs are heavily challenged. Options, cheapest→most robust:
   AES-256-CTR method, actively patched) is the healthiest surviving extractor but
   **hardsub** — use for coverage/fallback, not subtitle styling. AnimePahe stays the
   always-on hardsub baseline.
-- **Phase 3 — Subtitles.** Plan revised by research (2026-06-03 — see
+- **Phase 3 — Subtitles — BUILT & VERIFIED (2026-06-03).** Indonesian (subdl) +
+  Japanese (Jimaku) external WebVTT tracks: `source-service/src/subtitles/*`
+  resolves + episode-matches, downloads, unzips, converts ASS/SRT→VTT (LRU-cached,
+  SSRF-guarded); `/watch` attaches tracks (resolved in parallel = no added
+  latency); `/subs` serves `text/vtt` with CORS. No frontend change — the player
+  already pipes `subtitles` and renders cross-origin cues. Verified live: Frieren
+  ep1 → Indonesian 311 cues + Japanese 351; JJK ep5 → 368 + 335. **To activate:**
+  rebuild the source-service container (`docker compose up -d --build`) so it picks
+  up the new code + the keys in `.env`. Still in-browser-untested on the running
+  stack (needs the rebuild). Plan revised by research (2026-06-03 — see
   [SUBTITLE-SOURCING-RESEARCH.md](SUBTITLE-SOURCING-RESEARCH.md)): **English is free**
   (the soft-sub stream bundles an English VTT — don't build a pipeline for it).
   **Japanese → Jimaku** (AniList-native API). **Indonesian → subdl** — keys now in
@@ -214,12 +223,11 @@ bidirectional embed fallback stay.
    (already written in `watch/[id].tsx`).
 2. **Hotkey `n` → next episode** (folded into the player keyboard now).
 3. **Skip-intro** — needs intro/outro markers (aniskip API, keyed by MAL id).
-4. **Indonesian subtitles** — Phase 3. Research (2026-06-03,
-   [SUBTITLE-SOURCING-RESEARCH.md](SUBTITLE-SOURCING-RESEARCH.md)) revised the source:
-   **subdl** (not OpenSubtitles) is the Indo pick; English is free from the soft-sub
-   stream; Jimaku for Japanese. Honest verdict: broad Indo coverage isn't attainable
-   cleanly (Indo subs are mostly hardsubs) — partial via subdl, full only via
-   server-side MT. Needs a free subdl API key. Player is already subtitle-ready.
+4. **Indonesian subtitles — BUILT (2026-06-03).** subdl (Indonesian) + Jimaku
+   (Japanese) external tracks resolved + converted to VTT in the source-service
+   (`src/subtitles/*`, `/subs`), served to the already-subtitle-ready player.
+   Verified live (Frieren/JJK). Coverage: good for current/popular anime, thin for
+   old classics. Activate by rebuilding the source-service container. See Phase 3.
 5. **Dubbed via our player** — likely broken; investigate AnimePahe dub (`category=dub`).
 6. **/api-finder filler vs canon — DONE (2026-06-03).** `packages/api/src/filler.ts`
    scrapes animefillerlist.com → `getFillerEpisodes(title)`; a `/api/filler` route
@@ -320,20 +328,75 @@ before any of it earns a phase number.
   in-player companion** — so for feature B we would either run it standalone as a
   self-hosted assistant, or reuse only its model-serving layer and build our own
   companion UI. It is not a drop-in widget.
-- **Reality check (Odysseus does NOT dodge this):** its own docs say the core app is
-  lightweight but "**local model serving is the heavy part**." The current Option B box
-  is ~2 GB RAM and already spent on FlareSolverr — it cannot also run local inference on
-  a quality model (7B and up wants far more RAM and realistically a GPU, a different cost
-  tier from the $5–6/mo source VPS). Two honest paths, and Odysseus supports either:
-    1. **Odysseus pointed at a hosted free-tier API** (free Gemini / Groq-style tier, or
-       OpenRouter free models) — fastest to a working demo, no GPU, but rate-limited and
-       not truly "ours".
-    2. **Odysseus serving a local open model on a GPU box** — real ownership, materially
-       more cost.
-  Decide the value of A–C *first*; the hosting choice follows from that decision, it
-  should not drive it.
+- **Key correction — for the web app you do NOT integrate *through* Odysseus.** Odysseus
+  is a human-facing UI; our app needs a *model endpoint*, not another UI. The clean wiring
+  reuses the same engine Odysseus itself drives (Ollama / llama.cpp), run on its own and
+  called directly:
 
-**Suggested first step if we ever pursue this:** prototype **B** as a thin text
-companion grounded on synopsis + subtitles, running on a hosted free-tier model, before
-spending anything on self-hosting or realtime co-watch. Prove people want to talk to it
-before we pay to run it.
+  ```
+  [ Ollama on the box ]  → OpenAI-compatible HTTP API (/v1/chat/completions)
+            │
+            ▼
+  [ Next.js /api/companion route ]  → grounds the prompt on synopsis + subtitle window
+            │
+            ▼
+  [ in-player companion chat ]
+  ```
+
+  Ollama exposes that API the moment it runs. Our Next.js server route calls it exactly
+  like the existing `/api/filler` / `/api/subs` routes. Odysseus stays optional — useful
+  as a *human* console to trial models, irrelevant to the app's data path. Crucially the
+  endpoint is **OpenAI-compatible either way**, so a hosted free API today and a local
+  Ollama later are the *same* integration with a different base URL — swap, don't rewrite.
+- **Hardware reality (this is the real gate, not the code).** Approx, Q4-quantized:
+
+  | Model | Needs | Verdict for a companion |
+  |---|---|---|
+  | Llama 3.2 **1B** | ~2–3 GB RAM, CPU ok | runs cheap, too dumb to banter well |
+  | Llama 3.2 **3B** | ~4–5 GB RAM, CPU slow | borderline; sluggish replies |
+  | Qwen2.5 **7B** / Llama 3.1 **8B** | ~6–8 GB RAM **or ~6 GB VRAM** | the "actually fun to talk to" tier — wants a GPU for real-time |
+
+  The current ~2 GB Option B box runs **none** of these usefully. A GPU box that does is a
+  different cost tier (tens-to-hundreds $/mo always-on), not the $5–6/mo source VPS. So:
+    1. **Hosted free-tier API now** — no GPU, working today, rate-limited (see E).
+    2. **Local Ollama on a GPU box later** — real ownership, materially more cost.
+  Same endpoint shape both times. Decide A–C's value *first*; hosting follows that.
+
+**E. Which free model, and how it plugs in — for *our* context (verified 2026-06-03).**
+The companion needs: casual banter / persona, **Indonesian + English** (target users chat
+in Indo), strong instruction-following to stay grounded on the synopsis + subtitle window,
+and low enough latency to feel alive mid-episode. Against that, the free tiers ranked:
+
+- **Default pick — Google Gemini 2.0 Flash (AI Studio free).** Best **multilingual**
+  (strong Indonesian, so the persona actually banters in the users' language) and a
+  **1M-token context** — we can drop the *whole* episode's subtitle VTT + synopsis + tags
+  in as grounding with no chunking. Free tier ~**1,500 requests/day, 15 RPM** (plenty for
+  personal scale; Google trimmed free limits ~50–80% in late 2025, but 15 RPM is fine for
+  one viewer chatting). Prototype on this.
+- **Speed pick — Groq + Llama 3.3 70B.** ~**300+ tokens/sec**, replies feel instant — the
+  best "talking while watching" feel. Limits ~**30 RPM / 1,000 req/day / 6,000 TPM**.
+  Catch: the 6k tokens/min cap means **don't** stuff the full subtitle file each turn —
+  feed a **rolling window** of recent lines. Indonesian is okay (weaker than Gemini). Keep
+  it wired as the low-latency alternate.
+- **Flexibility pick — OpenRouter (one OpenAI-compatible key).** ~28 free models (DeepSeek
+  R1, Llama 3.3 70B, Qwen3, Gemma 3, even Gemini 2.0 Flash free) behind a single endpoint,
+  so we can A/B which persona *feels* best without rewiring. Limits **20 RPM, 50 req/day**
+  free → **1,000/day after a one-time $10** (never expires). This is also the exact
+  endpoint shape we'd later point at local Ollama.
+
+**Recommendation:** prototype the companion on **Gemini 2.0 Flash free** (multilingual +
+huge context = least friction for subtitle grounding); keep **Groq / Llama-3.3-70B** wired
+as the low-latency alternate; only consider local Ollama once B proves it earns the GPU
+bill. Brand note: UI chrome stays English (CLAUDE.md), but the *companion's speech* is
+conversational content like subtitles — bilingual / Indonesian for these users is the
+likely call; confirm when B becomes real.
+
+**Suggested first step if we ever pursue this:** prototype **B** as a thin text companion
+grounded on synopsis + subtitles, on **Gemini 2.0 Flash free** behind a Next.js
+`/api/companion` route, before spending anything on self-hosting or realtime co-watch.
+Prove people want to talk to it before we pay to run it.
+
+> Sources for the free-tier figures (verified 2026-06-03): [TokenMix — free LLM APIs](https://tokenmix.ai/blog/free-llm-apis-2026-every-provider-free-tier-tested),
+> [costbench — best free-tier API](https://costbench.com/best/best-llm-api-with-free-tier/),
+> [costgoat — OpenRouter free models](https://costgoat.com/pricing/openrouter-free-models),
+> [OpenRouter free-models collection](https://openrouter.ai/collections/free-models).
