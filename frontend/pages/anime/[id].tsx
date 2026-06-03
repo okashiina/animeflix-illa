@@ -7,6 +7,7 @@ import {
   MediaStatus,
 } from '@animeflix/api/aniList';
 import { EpisodesListFragment } from '@animeflix/api/kitsu';
+import { ClockIcon } from '@heroicons/react/outline';
 import { EmojiSadIcon } from '@heroicons/react/solid';
 import { NextSeo } from 'next-seo';
 
@@ -19,6 +20,8 @@ interface AnimeProps {
   anime: AnimeInfoFragment & AnimeBannerFragment;
   recommended: AnimeInfoFragment[];
   episodes: EpisodesListFragment;
+  status: MediaStatus | null;
+  startDate: { year: number | null; month: number | null; day: number | null };
 }
 
 export const getServerSideProps: GetServerSideProps<AnimeProps> = async (
@@ -62,6 +65,12 @@ export const getServerSideProps: GetServerSideProps<AnimeProps> = async (
         (r) => r.mediaRecommendation
       ),
       episodes,
+      status: data.Media.status ?? null,
+      startDate: {
+        year: data.Media.startDate?.year ?? null,
+        month: data.Media.startDate?.month ?? null,
+        day: data.Media.startDate?.day ?? null,
+      },
     },
   };
 };
@@ -77,10 +86,65 @@ const EmptyState: React.FC<{ message: string }> = ({ message }) => (
   </div>
 );
 
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+// Premiere date, formatted in UTC for deterministic SSR/CSR output.
+const premiereLabel = (
+  airingAt: number | null,
+  startDate: { year: number | null; month: number | null; day: number | null }
+): string | null => {
+  if (airingAt) {
+    const d = new Date(airingAt * 1000);
+    return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  }
+  if (startDate.year) {
+    const { year, month, day } = startDate;
+    if (month && day) return `${day} ${MONTHS[month - 1]} ${year}`;
+    if (month) return `${MONTHS[month - 1]} ${year}`;
+    return `${year}`;
+  }
+  return null;
+};
+
+const ComingSoon: React.FC<{ label: string | null }> = ({ label }) => (
+  <div className="mt-10 px-4 sm:px-6 lg:px-8">
+    <div className="flex flex-col items-center justify-center gap-2.5 rounded-2xl border border-line/60 bg-surface/40 px-6 py-12 text-center">
+      <ClockIcon className="h-10 w-10 text-accent" aria-hidden />
+      <p className="font-display text-lg font-semibold text-fg sm:text-xl">
+        Not aired yet
+      </p>
+      {label ? (
+        <p className="text-sm text-muted">
+          Premieres <span className="font-semibold text-fg">{label}</span>
+        </p>
+      ) : (
+        <p className="text-sm text-muted">
+          This title hasn&apos;t started airing.
+        </p>
+      )}
+    </div>
+  </div>
+);
+
 const Anime = ({
   anime,
   recommended,
   episodes,
+  status,
+  startDate,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) => {
   return (
     <>
@@ -116,9 +180,18 @@ const Anime = ({
           <EpisodeSection anime={anime} episodes={episodes} />
         )}
 
-        {anime.format !== 'MOVIE' && episodes.episodeCount === 0 && (
-          <EmptyState message="No episodes found" />
-        )}
+        {anime.format !== 'MOVIE' &&
+          episodes.episodeCount === 0 &&
+          (status === MediaStatus.NotYetReleased ? (
+            <ComingSoon
+              label={premiereLabel(
+                anime.nextAiringEpisode?.airingAt ?? null,
+                startDate
+              )}
+            />
+          ) : (
+            <EmptyState message="No episodes found" />
+          ))}
 
         {recommended.length > 0 ? (
           <Section animeList={recommended} title="Recommended" />
