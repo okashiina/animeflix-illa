@@ -4,9 +4,16 @@ import { GetServerSideProps, InferGetServerSidePropsType } from 'next';
 import { useRouter } from 'next/router';
 
 import { watchPage } from '@animeflix/api';
-import { AnimeBannerFragment, AnimeInfoFragment } from '@animeflix/api/aniList';
+import {
+  AnimeBannerFragment,
+  AnimeInfoFragment,
+  MediaType,
+} from '@animeflix/api/aniList';
 import { NextSeo } from 'next-seo';
 
+import RelatedSection, {
+  type RelationItem,
+} from '@components/anime/RelatedSection';
 import Genre from '@components/Genre';
 import Header from '@components/Header';
 import progressBar from '@components/Progress';
@@ -24,6 +31,7 @@ import { arrayToString } from '@utility/utils';
 interface WatchProps {
   anime: AnimeInfoFragment & AnimeBannerFragment;
   recommended: (AnimeInfoFragment & AnimeBannerFragment)[];
+  related: RelationItem[];
 }
 
 export const getServerSideProps: GetServerSideProps<WatchProps> = async (
@@ -49,10 +57,22 @@ export const getServerSideProps: GetServerSideProps<WatchProps> = async (
     (anime) => anime.mediaRecommendation
   );
 
+  // Related franchise entries (sequels / side stories / OVAs, ANIME nodes only)
+  // so viewers can jump within a series without leaving the watch page.
+  const related: RelationItem[] = (data.anime.relations?.edges ?? [])
+    .filter(
+      (e) => e && e.node && e.node.type === MediaType.Anime && e.relationType
+    )
+    .map((e) => ({
+      relationType: e.relationType as string,
+      node: e.node as AnimeInfoFragment,
+    }));
+
   return {
     props: {
       anime: data.anime,
       recommended,
+      related,
       initialReduxState: store.getState(),
     },
   };
@@ -61,6 +81,7 @@ export const getServerSideProps: GetServerSideProps<WatchProps> = async (
 const Watch = ({
   anime,
   recommended,
+  related,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) => {
   // finish the progress bar
   progressBar.finish();
@@ -203,6 +224,10 @@ const Watch = ({
                 {anime.description?.replace(/<\w*\\?>/g, '')}
               </p>
             </div>
+
+            {/* Related franchise entries — jump to sequels/OVAs without leaving
+                the watch page. flush: the column already has its own padding. */}
+            <RelatedSection items={related} flush />
           </div>
 
           {/* Recommendations */}

@@ -28,10 +28,17 @@ const RELATION_ORDER = Object.keys(RELATION_LABELS);
 
 export interface RelatedSectionProps {
   items: RelationItem[];
+  /** Drop the section's own horizontal padding (for parents that already pad,
+      e.g. the watch page column). Defaults to padded, as the detail page needs. */
+  flush?: boolean;
 }
 
-const RelatedSection: React.FC<RelatedSectionProps> = ({ items }) => {
+const RelatedSection: React.FC<RelatedSectionProps> = ({
+  items,
+  flush = false,
+}) => {
   const railRef = useRef<HTMLDivElement>(null);
+  const pad = flush ? '' : 'px-4 sm:px-6 lg:px-8';
 
   // Keep only relations we label, de-dupe by id, then sort into reading order.
   const seen = new Set<number>();
@@ -52,7 +59,7 @@ const RelatedSection: React.FC<RelatedSectionProps> = ({ items }) => {
 
   return (
     <section className="mt-10">
-      <div className="mb-3 flex items-center gap-2.5 px-4 sm:px-6 lg:px-8">
+      <div className={`mb-3 flex items-center gap-2.5 ${pad}`}>
         <span className="h-5 w-1 rounded-full bg-aurora" aria-hidden />
         <h2 className="font-display text-xl font-bold tracking-tight text-fg sm:text-2xl">
           Related
@@ -64,7 +71,7 @@ const RelatedSection: React.FC<RelatedSectionProps> = ({ items }) => {
           tabIndex={0}
           ref={railRef}
           onMouseEnter={() => railRef.current?.focus()}
-          className="flex snap-x gap-4 overflow-x-auto overflow-y-hidden scroll-smooth px-4 pb-3 outline-none scrollbar-hide sm:px-6 lg:px-8"
+          className={`flex snap-x gap-4 overflow-x-auto overflow-y-hidden scroll-smooth pb-3 outline-none scrollbar-hide ${pad}`}
         >
           {related.map(({ relationType, node }) => (
             <div key={node.id} className="relative shrink-0">

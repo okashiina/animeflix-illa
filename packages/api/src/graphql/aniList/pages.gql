@@ -51,6 +51,15 @@ query watchPage($id: Int, $perPage: Int) {
   anime: Media(id: $id) {
     ...AnimeBanner
     ...AnimeInfo
+    relations {
+      edges {
+        relationType
+        node {
+          type
+          ...AnimeInfo
+        }
+      }
+    }
   }
 
   recommended: Page(perPage: $perPage) {
