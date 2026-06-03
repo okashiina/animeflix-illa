@@ -217,6 +217,16 @@ scrubber with buffered range, a **settings** menu, **keyboard hotkeys**, and a
 **captions toggle** scaffold (real tracks arrive in Phase 3). Quality select + the
 bidirectional embed fallback stay.
 
+**Player UX — SHIPPED + recent additions (2026-06-03).** Custom control bar is live.
+Captions render in our own layer with user styling; **caption size now scales with
+the player** (clamped `cqw` units on a container-typed stage — fixed px looked tiny
+on 2K/fullscreen, XL now reaches ~88px). A **subtitle track selector** (Off /
+Indonesian / Japanese) and a **subtitle delay** control (±0.5s) were added — the
+delay matters because external tracks are timed to their own encode and drift vs
+AnimePahe's video (live example: Frieren ep1 — Jimaku JP matched exactly, subdl's
+Crunchyroll Indonesian lagged ~30s on the OP). The clean fix (no drift, no burned-in
+English underneath) is a soft-sub video source = HiAnime, which is VPS-gated.
+
 **Backlog (next phases):**
 1. **Watch history** — track last-watched episode + resume timestamp ("continue
    watching"). Build on the existing `Anime{id}="{ep}-{sec}"` localStorage record
@@ -235,9 +245,10 @@ bidirectional embed fallback stay.
    mixed = violet, anime-canon = sky; canon unmarked) with a legend that appears only
    when a title has non-canon episodes. Live-verified (Naruto 90 filler; JJK all canon).
 7. **Related-anime grouping — DONE (2026-06-03).** `relations` added to the animePage
-   query; a new `RelatedSection` rail on the detail page surfaces watchable franchise
-   entries (sequel/prequel/side-story/OVA/spin-off, ANIME nodes only), labelled,
-   de-duped and ordered. Manga/source relations dropped.
+   AND watchPage queries; a `RelatedSection` rail surfaces watchable franchise entries
+   (sequel/prequel/side-story/OVA/spin-off, ANIME nodes only), labelled, de-duped and
+   ordered, on **both the detail page and the watch page** (below the synopsis, for
+   in-series navigation without leaving the player). Manga/source relations dropped.
 8. **Multi-source fallback** — AnimePahe lags new/airing titles (JJK S3/Culling Game
    not found); research + scrape more providers for a real fallback chain (Phase 2
    resilience SOP §3 circuit breaker + §1 provider chain). **Research outcome
@@ -248,6 +259,12 @@ bidirectional embed fallback stay.
    the current method is **AES-256-CTR** (ani-cli, patched 2026-04). DMCA caveat:
    `aniwatch`/`consumet` upstream repos are frozen, so vendor/pin and be ready to
    patch the megacloud extractor in-house.
+   **Current state (server selection):** our *direct* player resolves **AnimePahe
+   only** — there is no "pick another server" for the direct path yet (AllAnime is a
+   stub, HiAnime is VPS-gated). The multiple selectable servers users see are the
+   **embed switcher** (Videasy/4Animo/NHDAPI), which is a separate iframe path and the
+   automatic fallback. Adding real direct-server choice needs AllAnime revived and/or
+   HiAnime on a VPS; until then the resolver chain is single-provider by necessity.
 
 ---
 
