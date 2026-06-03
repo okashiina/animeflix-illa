@@ -110,7 +110,24 @@ Railway datacenter IPs are heavily challenged. Options, cheapest→most robust:
   polish is the next round — see **§8**.
 - **Phase 2 — Resilience.** Add 2–3 fallback providers + caching + circuit breakers
   + canary monitoring + `/status`. Gate: canary >95% green for a week.
-- **Phase 3 — Subtitles.** OpenSubtitles (id) → VTT, wired into our player.
+  **Provider decision (2026-06-03 — see [STREAMING-SOURCES-RESEARCH.md](STREAMING-SOURCES-RESEARCH.md)):**
+  a March 2026 Crunchyroll DMCA wave froze `aniwatch`/`consumet` upstream (the npm
+  packages still install). **HiAnime/Zoro via `aniwatch` is the only true soft-sub
+  source** (returns separate multi-language WebVTT) → implement as
+  `providers/hianime.ts`, but its page hosts are ISP-blocked from the laptop
+  (522 / SNI hang), so extraction is **VPS-gated**. **AllAnime** (ani-cli
+  AES-256-CTR method, actively patched) is the healthiest surviving extractor but
+  **hardsub** — use for coverage/fallback, not subtitle styling. AnimePahe stays the
+  always-on hardsub baseline.
+- **Phase 3 — Subtitles.** Plan revised by research (2026-06-03 — see
+  [SUBTITLE-SOURCING-RESEARCH.md](SUBTITLE-SOURCING-RESEARCH.md)): **English is free**
+  (the soft-sub stream bundles an English VTT — don't build a pipeline for it).
+  **Japanese → Jimaku** (AniList-native API). **Indonesian → subdl** best-effort
+  (`id` catalogue, IMDb-keyed, partial anime coverage). Convert ASS/SRT → VTT
+  server-side and cache. Honest verdict: broad Indonesian coverage is not attainable
+  from a clean source (Indo subs are mostly hardsubs); full coverage only via
+  server-side machine translation. **Free API keys to obtain: Jimaku + subdl.**
+  OpenSubtitles deprioritized (IMDb-mapping pain + ~20 downloads/day cap).
 - **Phase 4 — UI redesign** (now prioritized FIRST — free, high-value, no source
   dependency). Rebuild watch/home/browse UI in-repo on the existing embed playback,
   using the mandatory UI/UX skills (CLAUDE.md). Player lib decided here.
@@ -193,20 +210,32 @@ bidirectional embed fallback stay.
    (already written in `watch/[id].tsx`).
 2. **Hotkey `n` → next episode** (folded into the player keyboard now).
 3. **Skip-intro** — needs intro/outro markers (aniskip API, keyed by MAL id).
-4. **Indonesian subtitles** — Phase 3 (OpenSubtitles id → VTT). AnimePahe returns none today.
+4. **Indonesian subtitles** — Phase 3. Research (2026-06-03,
+   [SUBTITLE-SOURCING-RESEARCH.md](SUBTITLE-SOURCING-RESEARCH.md)) revised the source:
+   **subdl** (not OpenSubtitles) is the Indo pick; English is free from the soft-sub
+   stream; Jimaku for Japanese. Honest verdict: broad Indo coverage isn't attainable
+   cleanly (Indo subs are mostly hardsubs) — partial via subdl, full only via
+   server-side MT. Needs a free subdl API key. Player is already subtitle-ready.
 5. **Dubbed via our player** — likely broken; investigate AnimePahe dub (`category=dub`).
-6. **/api-finder** — filler vs canon episode data → colour-code episodes (filler /
-   canon / mixed) **with a legend**. No official API; scrape animefillerlist.com.
-7. **Related-anime grouping** — nest sequels/OVA/side-stories under the parent (JJK S2
-   under JJK), via AniList `relations` edges (SEQUEL/PREQUEL/SIDE_STORY/…) or MAL —
-   not as standalone entries.
+6. **/api-finder filler vs canon — DONE (2026-06-03).** `packages/api/src/filler.ts`
+   scrapes animefillerlist.com → `getFillerEpisodes(title)`; a `/api/filler` route
+   feeds the watch-page episode grid, which now shows colour bars (filler = amber,
+   mixed = violet, anime-canon = sky; canon unmarked) with a legend that appears only
+   when a title has non-canon episodes. Live-verified (Naruto 90 filler; JJK all canon).
+7. **Related-anime grouping — DONE (2026-06-03).** `relations` added to the animePage
+   query; a new `RelatedSection` rail on the detail page surfaces watchable franchise
+   entries (sequel/prequel/side-story/OVA/spin-off, ANIME nodes only), labelled,
+   de-duped and ordered. Manga/source relations dropped.
 8. **Multi-source fallback** — AnimePahe lags new/airing titles (JJK S3/Culling Game
    not found); research + scrape more providers for a real fallback chain (Phase 2
-   resilience SOP §3 circuit breaker + §1 provider chain). Decided order (2026-06-03):
-   dockerize + commit -> revive **AllAnime** (local-testable via FlareSolverr) ->
-   **Indonesian subs** via OpenSubtitles (player is already subtitle-ready). HiAnime
-   (`aniwatch`, already a dep, soft-subs + best new-anime coverage) is ISP-blocked on
-   the laptop, so it only becomes testable on the VPS.
+   resilience SOP §3 circuit breaker + §1 provider chain). **Research outcome
+   (2026-06-03, [STREAMING-SOURCES-RESEARCH.md](STREAMING-SOURCES-RESEARCH.md)):**
+   the soft-sub goal points at **HiAnime via `aniwatch`** (only source with separate
+   VTT tracks) — VPS-gated (laptop page hosts blocked). **AllAnime** stays the
+   coverage/fallback pick but is hardsub, and its old XOR-56 decode is now outdated —
+   the current method is **AES-256-CTR** (ani-cli, patched 2026-04). DMCA caveat:
+   `aniwatch`/`consumet` upstream repos are frozen, so vendor/pin and be ready to
+   patch the megacloud extractor in-house.
 
 ---
 
