@@ -1,12 +1,19 @@
-import { BookmarkIcon as BookmarkOutlineIcon } from '@heroicons/react/outline';
+import {
+  BookmarkIcon as BookmarkOutlineIcon,
+  ClockIcon,
+} from '@heroicons/react/outline';
 import { BookmarkIcon as BookmarkSolidIcon } from '@heroicons/react/solid';
 
 import useInWatchlist from '@hooks/useInWatchlist';
+import { setExplicitStatus } from '@utility/listStatus';
 import { toggleWatchlist } from '@utility/watchlist';
 
 export interface WatchlistButtonProps {
   id: number;
-  variant?: 'icon' | 'labeled';
+  // 'planning' is a quick "Watch Later" action: it marks the title PLANNING
+  // (which also adds it to the list). Opt-in only — existing call sites keep
+  // their bookmark toggle behaviour.
+  variant?: 'icon' | 'labeled' | 'planning';
   className?: string;
 }
 
@@ -28,6 +35,27 @@ const WatchlistButton: React.FC<WatchlistButtonProps> = ({
   };
 
   const ariaLabel = inList ? 'Remove from My List' : 'Add to My List';
+
+  // Quick "Watch Later": mark PLANNING (which also pulls it onto the list).
+  const handlePlanClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setExplicitStatus(id, 'PLANNING');
+  };
+
+  if (variant === 'planning') {
+    return (
+      <button
+        type="button"
+        onClick={handlePlanClick}
+        aria-label="Add to Watch Later"
+        className={`inline-flex items-center gap-2 rounded-full border border-line bg-surface px-5 py-3 text-sm font-semibold text-fg transition duration-200 ease-out hover:bg-surface-2 active:scale-95 ${className}`}
+      >
+        <ClockIcon className="h-5 w-5" aria-hidden />
+        Watch Later
+      </button>
+    );
+  }
 
   if (variant === 'labeled') {
     return (

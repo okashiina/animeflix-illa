@@ -10,6 +10,7 @@ import ContinueWatchingRail from '@components/anime/ContinueWatchingRail';
 import MyListRail from '@components/anime/MyListRail';
 import Section from '@components/anime/Section';
 import Spotlight from '@components/anime/Spotlight';
+import WatchLaterRail from '@components/anime/WatchLaterRail';
 import Footer from '@components/Footer';
 import Header from '@components/Header';
 import Reveal from '@components/motion/Reveal';
@@ -95,6 +96,10 @@ const Home = ({
 
         <Reveal>
           <MyListRail />
+        </Reveal>
+
+        <Reveal>
+          <WatchLaterRail />
         </Reveal>
 
         {trending.length > 0 && (
