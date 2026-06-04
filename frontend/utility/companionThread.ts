@@ -16,6 +16,9 @@ import { createStore } from './externalStore';
 export interface ThreadMessage {
   role: 'user' | 'assistant';
   content: string;
+  // Playback position (seconds) when the turn was sent, so the chat can show
+  // "at 12:34" of the episode. Optional + only set on the direct player.
+  t?: number;
 }
 
 interface ThreadEntry {

@@ -235,6 +235,7 @@ const Watch = ({
                   animeId={animeId}
                   episode={episode}
                   total={totalEpisodes}
+                  variant="dock"
                 />
               }
             />

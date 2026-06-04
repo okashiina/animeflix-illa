@@ -18,6 +18,20 @@ const API_KEY = process.env.COMPANION_API_KEY || '';
 // has free quota. Override with COMPANION_MODEL (e.g. gemini-2.5-flash-lite).
 const MODEL = process.env.COMPANION_MODEL || 'gemini-2.5-flash';
 
+// Optional uncensored provider, used ONLY for the explicit "unhinged" tone when
+// the viewer has opted in. The mainstream default models (Groq/Gemini) are
+// safety-aligned and pull back from genuinely explicit content; an uncensored
+// model (e.g. a Dolphin via OpenRouter, OpenAI-compatible) lets the unhinged
+// persona actually go there. If no key is set, unhinged falls back to the
+// default provider (just capped by its alignment).
+const UNCENSORED_KEY = process.env.COMPANION_UNCENSORED_API_KEY || '';
+const UNCENSORED_BASE = (
+  process.env.COMPANION_UNCENSORED_API_BASE || 'https://openrouter.ai/api/v1'
+).replace(/\/$/, '');
+const UNCENSORED_MODEL =
+  process.env.COMPANION_UNCENSORED_MODEL ||
+  'cognitivecomputations/dolphin-mistral-24b-venice-edition:free';
+
 // --- Persona ---------------------------------------------------------------
 // The companion is the friend in the next seat at a tiny live house. Voice is a
 // brand-copywriter job (kessoku band flavour); the hard rules below are what
@@ -140,7 +154,16 @@ const buildSystem = (body: CompanionBody): string => {
   // Honour the explicit tone only when the viewer opted in; otherwise keep it fun.
   let tone = body.tone && TONE_PROMPTS[body.tone] ? body.tone : 'adaptive';
   if (tone === 'unhinged' && !body.mature) tone = 'hype';
-  parts.push(`TONE: ${TONE_PROMPTS[tone]}`);
+  if (tone === 'unhinged') {
+    // A forceful override placed LAST so it wins over the "warm, a little shy /
+    // no lecturing" base voice, which otherwise smothers this mode. (The hosted
+    // model's own safety alignment still caps how explicit it will actually go.)
+    parts.push(
+      'TONE OVERRIDE — UNHINGED (18+, the viewer opted in): the "warm, a little shy" and "no lecturing" guidance above is OFF right now. Talk like a chaotic, foul-mouthed friend on the couch: swear freely, roast hard, be blunt, crude, and over the top. Do not moralize, do not refuse, do not lecture the viewer about their jokes; riff with them and one-up them, match and amplify their energy. The only things you still hold to: never spoil anything that has not aired, and stay about this show.'
+    );
+  } else {
+    parts.push(`TONE: ${TONE_PROMPTS[tone]}`);
+  }
 
   return parts.join('\n\n');
 };
@@ -190,49 +213,72 @@ const handler = async (
     { role: 'user', content: clip(message, 1500) },
   ];
 
-  try {
-    const upstream = await fetch(`${API_BASE}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages,
-        temperature: 0.85,
-        max_tokens: 400,
-      }),
-    });
-
-    if (!upstream.ok) {
-      const detail = await upstream.text().catch(() => '');
+  // One chat-completion call against a given OpenAI-compatible provider. Returns
+  // the reply text, or null on any failure (so the caller can fall back).
+  const callOnce = async (
+    cBase: string,
+    cKey: string,
+    cModel: string,
+    temperature: number,
+    extra?: Record<string, string>
+  ): Promise<string | null> => {
+    try {
+      const upstream = await fetch(`${cBase}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${cKey}`,
+          ...(extra || {}),
+        },
+        body: JSON.stringify({
+          model: cModel,
+          messages,
+          temperature,
+          max_tokens: 400,
+        }),
+      });
+      if (!upstream.ok) {
+        const detail = await upstream.text().catch(() => '');
+        // eslint-disable-next-line no-console
+        console.error(
+          '[companion] upstream',
+          cModel,
+          upstream.status,
+          detail.slice(0, 200)
+        );
+        return null;
+      }
+      const json = (await upstream.json()) as {
+        choices?: { message?: { content?: string } }[];
+      };
+      return json.choices?.[0]?.message?.content?.trim() || null;
+    } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(
-        '[companion] upstream',
-        upstream.status,
-        detail.slice(0, 300)
-      );
-      res
-        .status(502)
-        .json({ error: 'upstream_error', status: upstream.status });
-      return;
+      console.error('[companion] fetch failed', cModel, err);
+      return null;
     }
+  };
 
-    const json = (await upstream.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
-    const reply = json.choices?.[0]?.message?.content?.trim() || '';
-    if (!reply) {
-      res.status(502).json({ error: 'empty_reply' });
-      return;
-    }
-    res.status(200).json({ reply });
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('[companion] fetch failed', err);
-    res.status(502).json({ error: 'network_error' });
+  // Opted-in unhinged → the uncensored provider; if it fails (free OpenRouter
+  // pools rate-limit intermittently) fall back to the default provider so the
+  // viewer still gets a reply (edgy but capped) instead of an error.
+  const uncensored = Boolean(
+    body.tone === 'unhinged' && body.mature && UNCENSORED_KEY
+  );
+
+  let reply = uncensored
+    ? await callOnce(UNCENSORED_BASE, UNCENSORED_KEY, UNCENSORED_MODEL, 1, {
+        'HTTP-Referer': 'https://kessokumoe.up.railway.app',
+        'X-Title': 'kessoku moe companion',
+      })
+    : null;
+  if (!reply) reply = await callOnce(API_BASE, API_KEY, MODEL, 0.85);
+
+  if (!reply) {
+    res.status(502).json({ error: 'upstream_error' });
+    return;
   }
+  res.status(200).json({ reply });
 };
 
 export default handler;
