@@ -27,6 +27,7 @@ query animePage($id: Int, $perPage: Int) {
     status
     ...AnimeInfo
     ...AnimeBanner
+    ...AnimeCast
     relations {
       edges {
         relationType
@@ -51,6 +52,7 @@ query watchPage($id: Int, $perPage: Int) {
   anime: Media(id: $id) {
     ...AnimeBanner
     ...AnimeInfo
+    ...AnimeCast
     relations {
       edges {
         relationType

@@ -32,6 +32,12 @@ export const {
   searchGenre,
   watchPage,
   getAnimeByIds,
+  // Discovery by studio / voice actor (AniList Media can't filter by these, so
+  // these use the dedicated Studio / Staff entry points + Page search).
+  studioPage,
+  staffPage,
+  searchStudios,
+  searchStaff,
   // AniList account sync (require an Authorization: Bearer <token> header,
   // passed per-request as the 2nd arg of each SDK function).
   viewer,

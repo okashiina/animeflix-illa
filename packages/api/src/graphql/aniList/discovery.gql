@@ -1,0 +1,113 @@
+query studioPage($id: Int, $page: Int, $perPage: Int) {
+  Studio(id: $id) {
+    id
+    name
+    media(sort: [POPULARITY_DESC], page: $page, perPage: $perPage) {
+      pageInfo {
+        total
+        currentPage
+        hasNextPage
+      }
+      nodes {
+        ...AnimeInfo
+      }
+    }
+  }
+}
+
+query staffPage($id: Int, $page: Int, $perPage: Int) {
+  Staff(id: $id) {
+    id
+    name {
+      full
+      native
+    }
+    image {
+      large
+      medium
+    }
+    description(asHtml: false)
+    languageV2
+    primaryOccupations
+    characterMedia(sort: [POPULARITY_DESC], page: $page, perPage: $perPage) {
+      pageInfo {
+        total
+        currentPage
+        hasNextPage
+      }
+      edges {
+        characterRole
+        characters {
+          id
+          name {
+            full
+          }
+          image {
+            medium
+          }
+        }
+        node {
+          ...AnimeInfo
+        }
+      }
+    }
+  }
+}
+
+query searchStudios($page: Int, $perPage: Int, $keyword: String) {
+  Page(perPage: $perPage, page: $page) {
+    pageInfo {
+      total
+      currentPage
+      hasNextPage
+    }
+    studios(search: $keyword) {
+      id
+      name
+      media(sort: [POPULARITY_DESC], perPage: 4) {
+        nodes {
+          id
+          title {
+            romaji
+            english
+          }
+          coverImage {
+            medium
+            color
+          }
+        }
+      }
+    }
+  }
+}
+
+query searchStaff($page: Int, $perPage: Int, $keyword: String) {
+  Page(perPage: $perPage, page: $page) {
+    pageInfo {
+      total
+      currentPage
+      hasNextPage
+    }
+    staff(search: $keyword) {
+      id
+      name {
+        full
+        native
+      }
+      image {
+        medium
+      }
+      primaryOccupations
+      characterMedia(perPage: 1, sort: [POPULARITY_DESC]) {
+        edges {
+          node {
+            title {
+              romaji
+              english
+            }
+          }
+        }
+      }
+    }
+  }
+}
