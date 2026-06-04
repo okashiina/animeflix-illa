@@ -18,6 +18,20 @@ const API_KEY = process.env.COMPANION_API_KEY || '';
 // has free quota. Override with COMPANION_MODEL (e.g. gemini-2.5-flash-lite).
 const MODEL = process.env.COMPANION_MODEL || 'gemini-2.5-flash';
 
+// Optional uncensored provider, used ONLY for the explicit "unhinged" tone when
+// the viewer has opted in. The mainstream default models (Groq/Gemini) are
+// safety-aligned and pull back from genuinely explicit content; an uncensored
+// model (e.g. a Dolphin via OpenRouter, OpenAI-compatible) lets the unhinged
+// persona actually go there. If no key is set, unhinged falls back to the
+// default provider (just capped by its alignment).
+const UNCENSORED_KEY = process.env.COMPANION_UNCENSORED_API_KEY || '';
+const UNCENSORED_BASE = (
+  process.env.COMPANION_UNCENSORED_API_BASE || 'https://openrouter.ai/api/v1'
+).replace(/\/$/, '');
+const UNCENSORED_MODEL =
+  process.env.COMPANION_UNCENSORED_MODEL ||
+  'cognitivecomputations/dolphin3.0-mistral-24b:free';
+
 // --- Persona ---------------------------------------------------------------
 // The companion is the friend in the next seat at a tiny live house. Voice is a
 // brand-copywriter job (kessoku band flavour); the hard rules below are what
@@ -199,17 +213,32 @@ const handler = async (
     { role: 'user', content: clip(message, 1500) },
   ];
 
+  // Route the opted-in "unhinged" tone to the uncensored provider when one is
+  // configured; every other tone (and unhinged without a key) uses the default.
+  const uncensored = Boolean(
+    body.tone === 'unhinged' && body.mature && UNCENSORED_KEY
+  );
+  const base = uncensored ? UNCENSORED_BASE : API_BASE;
+  const key = uncensored ? UNCENSORED_KEY : API_KEY;
+  const model = uncensored ? UNCENSORED_MODEL : MODEL;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${key}`,
+  };
+  // OpenRouter ranks/labels calls by these optional headers; harmless elsewhere.
+  if (uncensored) {
+    headers['HTTP-Referer'] = 'https://kessokumoe.up.railway.app';
+    headers['X-Title'] = 'kessoku moe companion';
+  }
+
   try {
-    const upstream = await fetch(`${API_BASE}/chat/completions`, {
+    const upstream = await fetch(`${base}/chat/completions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${API_KEY}`,
-      },
+      headers,
       body: JSON.stringify({
-        model: MODEL,
+        model,
         messages,
-        temperature: 0.85,
+        temperature: uncensored ? 1 : 0.85,
         max_tokens: 400,
       }),
     });
