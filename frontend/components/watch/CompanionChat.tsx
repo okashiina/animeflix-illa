@@ -39,12 +39,23 @@ export interface CompanionSeed {
   roster?: { name: string; role?: string; va?: string }[];
 }
 
+// mm:ss for the per-message episode timestamp ("you asked at 12:34").
+const fmtTime = (s: number): string => {
+  if (!Number.isFinite(s) || s < 0) return '';
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${String(sec).padStart(2, '0')}`;
+};
+
 const CompanionChat: React.FC<{
   seed: CompanionSeed;
   animeId: number;
   episode: number;
   total: number;
-}> = ({ seed, animeId, episode, total }) => {
+  // 'dock' = the fullscreen right-side panel: fills its container's full height
+  // (no card chrome). 'panel' = the windowed right-rail card.
+  variant?: 'panel' | 'dock';
+}> = ({ seed, animeId, episode, total, variant = 'panel' }) => {
   const prefs = useCompanionPrefs();
 
   // The conversation lives in the shared per-episode thread store, so it
@@ -89,19 +100,20 @@ const CompanionChat: React.FC<{
     const text = input.trim();
     if (!text || busy) return;
 
-    // Read the freshest thread from the store (the other panel may have appended
-    // since this render), then write the user turn through the shared store.
+    // Grab the live playback position first so the turn is stamped with the
+    // episode minute it happened at, then write the user turn through the shared
+    // store (the other panel may have appended since this render).
+    const aired = getAiredContext();
+    const at = aired?.current;
     const history = getThread(animeId, episode);
     setThread(
       animeId,
       episode,
-      history.concat({ role: 'user', content: text })
+      history.concat({ role: 'user', content: text, t: at })
     );
     setInput('');
     setBusy(true);
     setError(null);
-
-    const aired = getAiredContext();
 
     try {
       const res = await fetch('/api/companion', {
@@ -133,6 +145,7 @@ const CompanionChat: React.FC<{
         appendMessage(animeId, episode, {
           role: 'assistant',
           content: data.reply,
+          t: at,
         });
       } else {
         setError('I blanked on that one. Try asking again?');
@@ -162,7 +175,13 @@ const CompanionChat: React.FC<{
   };
 
   return (
-    <div className="flex h-[30rem] max-h-[72vh] flex-col overflow-hidden rounded-2xl border border-line/60 bg-canvas-2/95 shadow-card lg:h-[34rem]">
+    <div
+      className={`flex flex-col overflow-hidden bg-canvas-2/95 ${
+        variant === 'dock'
+          ? 'h-full'
+          : 'h-[30rem] max-h-[72vh] rounded-2xl border border-line/60 shadow-card lg:h-[34rem]'
+      }`}
+    >
       {/* Header */}
       <div className="flex items-center justify-between gap-2 border-b border-line/50 px-4 py-3">
         <div className="flex items-center gap-2">
@@ -318,8 +337,8 @@ const CompanionChat: React.FC<{
             <div
               // eslint-disable-next-line react/no-array-index-key
               key={i}
-              className={`flex ${
-                m.role === 'user' ? 'justify-end' : 'justify-start'
+              className={`flex flex-col ${
+                m.role === 'user' ? 'items-end' : 'items-start'
               }`}
             >
               <p
@@ -331,6 +350,11 @@ const CompanionChat: React.FC<{
               >
                 {m.content}
               </p>
+              {m.role === 'user' && typeof m.t === 'number' && (
+                <span className="mt-0.5 px-1 text-[10px] text-faint">
+                  at {fmtTime(m.t)}
+                </span>
+              )}
             </div>
           ))}
 

@@ -1515,7 +1515,7 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
               aria-label="Watch companion"
               onPointerDown={(e) => e.stopPropagation()}
               onKeyDown={(e) => e.stopPropagation()}
-              className="flex h-full w-[22rem] shrink-0 flex-col overflow-y-auto border-l border-line/60 bg-canvas-2/95 backdrop-blur sm:w-[24rem]"
+              className="flex h-full w-[22rem] shrink-0 flex-col border-l border-line/60 bg-canvas-2/95 backdrop-blur sm:w-[24rem]"
             >
               {companionSlot}
             </aside>

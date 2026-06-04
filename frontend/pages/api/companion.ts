@@ -140,7 +140,16 @@ const buildSystem = (body: CompanionBody): string => {
   // Honour the explicit tone only when the viewer opted in; otherwise keep it fun.
   let tone = body.tone && TONE_PROMPTS[body.tone] ? body.tone : 'adaptive';
   if (tone === 'unhinged' && !body.mature) tone = 'hype';
-  parts.push(`TONE: ${TONE_PROMPTS[tone]}`);
+  if (tone === 'unhinged') {
+    // A forceful override placed LAST so it wins over the "warm, a little shy /
+    // no lecturing" base voice, which otherwise smothers this mode. (The hosted
+    // model's own safety alignment still caps how explicit it will actually go.)
+    parts.push(
+      'TONE OVERRIDE — UNHINGED (18+, the viewer opted in): the "warm, a little shy" and "no lecturing" guidance above is OFF right now. Talk like a chaotic, foul-mouthed friend on the couch: swear freely, roast hard, be blunt, crude, and over the top. Do not moralize, do not refuse, do not lecture the viewer about their jokes; riff with them and one-up them, match and amplify their energy. The only things you still hold to: never spoil anything that has not aired, and stay about this show.'
+    );
+  } else {
+    parts.push(`TONE: ${TONE_PROMPTS[tone]}`);
+  }
 
   return parts.join('\n\n');
 };
