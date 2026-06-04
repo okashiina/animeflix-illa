@@ -16,6 +16,12 @@ import {
   useCompanionPrefs,
   type CompanionTone,
 } from '@utility/companionPrefs';
+import {
+  appendMessage,
+  getThread,
+  setThread,
+  useCompanionThread,
+} from '@utility/companionThread';
 
 // In-player AI watch companion. Grounds each reply on the title + a spoiler-safe
 // window of subtitle lines the player has actually shown (via getAiredContext),
@@ -28,21 +34,24 @@ export interface CompanionSeed {
   synopsis: string;
   genres: string[];
   format: string;
-}
-
-interface Msg {
-  role: 'user' | 'assistant';
-  content: string;
+  // Low-spoiler cast roster (names + role + JP voice actor only, no bios) so the
+  // companion can answer "wait, who was that?" without inventing anything.
+  roster?: { name: string; role?: string; va?: string }[];
 }
 
 const CompanionChat: React.FC<{
   seed: CompanionSeed;
+  animeId: number;
   episode: number;
   total: number;
-}> = ({ seed, episode, total }) => {
+}> = ({ seed, animeId, episode, total }) => {
   const prefs = useCompanionPrefs();
 
-  const [messages, setMessages] = useState<Msg[]>([]);
+  // The conversation lives in the shared per-episode thread store, so it
+  // persists across reloads AND renders identically in the right-rail panel and
+  // the fullscreen dock (both mount this component with the same animeId+episode).
+  const messages = useCompanionThread(animeId, episode);
+
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,8 +89,14 @@ const CompanionChat: React.FC<{
     const text = input.trim();
     if (!text || busy) return;
 
-    const history = messages;
-    setMessages([...history, { role: 'user', content: text }]);
+    // Read the freshest thread from the store (the other panel may have appended
+    // since this render), then write the user turn through the shared store.
+    const history = getThread(animeId, episode);
+    setThread(
+      animeId,
+      episode,
+      history.concat({ role: 'user', content: text })
+    );
     setInput('');
     setBusy(true);
     setError(null);
@@ -99,6 +114,7 @@ const CompanionChat: React.FC<{
           tone: prefs.tone,
           mature: prefs.mature,
           window: aired?.lines ?? [],
+          roster: seed.roster ?? [],
           messages: history.slice(-10),
           message: text,
         }),
@@ -114,7 +130,10 @@ const CompanionChat: React.FC<{
       }
       const data = (await res.json()) as { reply?: string };
       if (data.reply) {
-        setMessages((m) => [...m, { role: 'assistant', content: data.reply! }]);
+        appendMessage(animeId, episode, {
+          role: 'assistant',
+          content: data.reply,
+        });
       } else {
         setError('I blanked on that one. Try asking again?');
       }

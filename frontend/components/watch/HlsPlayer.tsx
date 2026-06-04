@@ -6,6 +6,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 
+import { ChatAlt2Icon } from '@heroicons/react/outline';
+
 import { type SkipMarkers } from '@utility/aniskip';
 import { registerAiredSource } from '@utility/companionContext';
 import { getEntry, markWatched, savePosition } from '@utility/progress';
@@ -42,6 +44,10 @@ interface HlsPlayerProps {
   episode?: number;
   total?: number; // total episodes for the title (drives "finished" tracking)
   skipMarkers?: SkipMarkers; // AniSkip intro/outro times (drives Skip button)
+  // The AI watch companion, rendered as a right-docked panel ONLY when the player
+  // is fullscreen and the chat toggle is on (YouTube-theater style). Off
+  // fullscreen the companion stays in the page right-rail, so this slot is null.
+  companionSlot?: React.ReactNode;
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -316,9 +322,15 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   episode,
   total,
   skipMarkers,
+  companionSlot,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  // The video region inside the stage. When the companion is docked in
+  // fullscreen the stage becomes a flex row (video wrapper + dock), so all the
+  // absolute overlays + caption-drag math anchor to THIS wrapper, not the stage,
+  // and they line up with the shrunken video area instead of the full frame.
+  const videoWrapRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout>>();
   const resumeTime = useRef(0);
@@ -358,6 +370,9 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   const [showUi, setShowUi] = useState(true);
   const [settings, setSettings] = useState(false);
   const [help, setHelp] = useState(false);
+  // Fullscreen companion dock (YouTube-theater). Only meaningful while
+  // fullscreen; the toggle button is hidden otherwise.
+  const [chatOpen, setChatOpen] = useState(false);
   const [subIdx, setSubIdx] = useState(-1);
   const [cueText, setCueText] = useState('');
   // Auto-next: dismissed for THIS episode, and a guard so we only advance once.
@@ -769,6 +784,8 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   );
 
   const chromeVisible = showUi || !playing || settings || help;
+  // The companion dock only docks while fullscreen, toggled on, and present.
+  const showDock = Boolean(isFs && chatOpen && companionSlot);
 
   // ---- scrubbing ----
   const seekToClientX = useCallback((clientX: number) => {
@@ -855,7 +872,7 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   // Drag the caption box anywhere over the video (YouTube-style); position is a
   // percentage of the stage so it survives resize / fullscreen, and persists.
   const onCapDown = (e: ReactPointerEvent) => {
-    const stage = stageRef.current;
+    const stage = videoWrapRef.current ?? stageRef.current;
     if (!stage) return;
     e.stopPropagation();
     e.preventDefault();
@@ -951,512 +968,558 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
           onPointerLeave={() =>
             playing && !settings && !help && setShowUi(false)
           }
-          // container-type lets the caption layer size itself in `cqw` (1% of the
-          // stage width), so captions scale with the player and with fullscreen.
-          // (cast: containerType predates this csstype version.)
-          style={{ containerType: 'inline-size' } as React.CSSProperties}
-          className={`group bg-black outline-none ${
+          className={`bg-black outline-none ${showDock ? 'flex' : ''} ${
             chromeVisible ? '' : 'cursor-none'
           }`}
         >
-          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            crossOrigin="anonymous"
-            onClick={togglePlay}
-            onDoubleClick={toggleFs}
-            className="absolute inset-0 h-full w-full bg-black object-contain"
+          {/* Video region: the positioning context for every overlay + caption.
+              It is the full stage normally, and flex-1 (the room left of the
+              dock) when the companion is docked in fullscreen. container-type
+              lets the caption layer size itself in `cqw` (1% of this region's
+              width), so captions scale with the visible video, dock or not.
+              (cast: containerType predates this csstype version.) */}
+          <div
+            ref={videoWrapRef}
+            style={{ containerType: 'inline-size' } as React.CSSProperties}
+            className="group relative h-full min-w-0 flex-1 bg-black"
           >
-            {subtitles.map((s) => (
-              <track
-                key={s.url}
-                kind="subtitles"
-                src={s.url}
-                srcLang={s.lang}
-                label={s.label || s.lang}
-              />
-            ))}
-          </video>
+            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              crossOrigin="anonymous"
+              onClick={togglePlay}
+              onDoubleClick={toggleFs}
+              className="absolute inset-0 h-full w-full bg-black object-contain"
+            >
+              {subtitles.map((s) => (
+                <track
+                  key={s.url}
+                  kind="subtitles"
+                  src={s.url}
+                  srcLang={s.lang}
+                  label={s.label || s.lang}
+                />
+              ))}
+            </video>
 
-          {/* Our own caption layer (native rendering is suppressed to 'hidden').
+            {/* Our own caption layer (native rendering is suppressed to 'hidden').
               The box stays mounted whenever subtitles are on — even between lines —
               so a drag survives cue-text changes; it sits above the controls (z-30)
               so it's grabbable while paused. When paused on a gap (no current line) a
               small handle appears so captions can still be repositioned anytime.
               Default position is bottom-centre. */}
-          {subIdx >= 0 && (
-            <div className="pointer-events-none absolute inset-0 z-30">
-              <span
-                onPointerDown={onCapDown}
-                onPointerMove={onCapMove}
-                onPointerUp={onCapUp}
-                className={`pointer-events-auto absolute max-w-[90%] touch-none select-none text-center font-semibold leading-snug ${
-                  capDragging ? 'cursor-grabbing' : 'cursor-grab'
-                }`}
-                style={{
-                  ...(capPos
-                    ? {
-                        left: `${capPos.x}%`,
-                        top: `${capPos.y}%`,
-                        transform: 'translate(-50%, -50%)',
-                      }
-                    : {
-                        left: '50%',
-                        bottom: chromeVisible ? '16%' : '7%',
-                        transform: 'translateX(-50%)',
-                        transition: 'bottom 0.2s ease',
-                      }),
-                  fontSize:
-                    CAP_SIZES.find((c) => c.k === capSize)?.css ??
-                    CAP_SIZES[1].css,
-                  whiteSpace: 'pre-line',
-                  color: capColor === 'yellow' ? '#F2D43D' : '#F6F6F8',
-                  // Background/shadow only when there's text — keep the box invisible
-                  // (and unobtrusive) between lines.
-                  ...(cueText
-                    ? {
-                        background: CAP_BG[capBg],
-                        padding: capBg === 'none' ? 0 : '0.12em 0.5em',
-                        borderRadius: 8,
-                        textShadow:
-                          capBg === 'none'
-                            ? '0 1px 3px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.95)'
-                            : 'none',
-                      }
-                    : null),
-                }}
-              >
-                {cueText ||
-                  (!playing && (
-                    <span className="bg-black/55 inline-block whitespace-nowrap rounded-md border border-dashed border-white/40 px-2 py-0.5 text-xs font-medium text-white/75">
-                      ↔ drag to move captions
-                    </span>
-                  ))}
-              </span>
-            </div>
-          )}
-
-          {/* Buffering */}
-          {waiting && (
-            <div className="pointer-events-none absolute inset-0 grid place-items-center">
-              <span className="h-11 w-11 animate-spin rounded-full border-[3px] border-fg/20 border-t-accent" />
-            </div>
-          )}
-
-          {/* Center play when paused */}
-          {!playing && !waiting && (
-            <button
-              type="button"
-              aria-label="Play"
-              onClick={togglePlay}
-              className="absolute inset-0 grid place-items-center"
-            >
-              <span className="grid h-[68px] w-[68px] place-items-center rounded-full bg-aurora text-accent-ink shadow-glow transition duration-200 hover:scale-105 active:scale-95">
-                <PlayIcon className="ml-0.5 h-8 w-8" />
-              </span>
-            </button>
-          )}
-
-          {/* Keyboard shortcuts overlay */}
-          {help && (
-            <div className="absolute inset-0 z-30 grid place-items-center bg-canvas/80 px-4 backdrop-blur-sm">
-              <div className="w-full max-w-md rounded-2xl border border-line/60 bg-canvas-2/95 p-5 shadow-lift">
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="font-display text-sm font-bold text-fg">
-                    Keyboard shortcuts
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() => setHelp(false)}
-                    className="rounded-full px-2 py-0.5 text-xs font-medium text-faint hover:text-fg"
-                  >
-                    Close
-                  </button>
-                </div>
-                <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
-                  {shortcuts.map(([keys, label]) => (
-                    <div
-                      key={label}
-                      className="flex items-center justify-between gap-3"
-                    >
-                      <dt className="flex items-center gap-1">
-                        {keys.map((key) => (
-                          <Kbd key={key}>{key}</Kbd>
-                        ))}
-                      </dt>
-                      <dd className="text-xs text-muted">{label}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            </div>
-          )}
-
-          {/* Skip intro / outro (AniSkip). Sits above the control scrim, lifts a
-              little when the chrome is visible so it never overlaps the bar. */}
-          {activeSkip && !help && !showUpNext && (
-            <button
-              type="button"
-              onClick={() => skipTo(activeSkip.end)}
-              className={`bg-canvas/85 absolute right-4 z-30 flex items-center gap-2 rounded-lg border border-line/60 px-4 py-2 text-sm font-semibold text-fg shadow-lift backdrop-blur transition hover:border-accent/60 hover:text-accent active:scale-95 sm:right-6 ${
-                chromeVisible ? 'bottom-24' : 'bottom-8'
-              }`}
-            >
-              {activeSkip.label}
-              <svg
-                viewBox="0 0 24 24"
-                className="h-4 w-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M5 5l7 7-7 7M13 5l7 7-7 7" />
-              </svg>
-            </button>
-          )}
-
-          {/* Up next — auto-play countdown in the final seconds. */}
-          {showUpNext && !help && (
-            <div
-              className={`absolute right-4 z-30 w-56 rounded-xl border border-line/60 bg-canvas/90 p-3 shadow-lift backdrop-blur sm:right-6 ${
-                chromeVisible ? 'bottom-24' : 'bottom-8'
-              }`}
-            >
-              <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-faint">
-                Up next
-              </p>
-              <p className="mt-0.5 truncate text-sm font-semibold text-fg">
-                Episode {(episode ?? 0) + 1}
-              </p>
-              <p className="mt-0.5 text-xs text-muted">
-                Playing in {Math.ceil(nextRemaining)}s
-              </p>
-              <div className="mt-2.5 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onNext?.()}
-                  className="flex-1 rounded-lg bg-aurora px-3 py-1.5 text-xs font-semibold text-accent-ink shadow-glow transition active:scale-95"
-                >
-                  Play now
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAutoNextDismissed(true)}
-                  className="rounded-lg border border-line/60 px-3 py-1.5 text-xs font-medium text-muted transition hover:text-fg"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Bottom scrim + controls */}
-          <div
-            className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-canvas/95 via-canvas/40 to-transparent pb-2 pt-10 transition-opacity duration-300 ${
-              chromeVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
-            }`}
-          >
-            {/* Scrubber */}
-            <div className="px-3">
-              <div
-                ref={trackRef}
-                role="slider"
-                tabIndex={-1}
-                aria-label="Seek"
-                aria-valuemin={0}
-                aria-valuemax={Math.floor(duration)}
-                aria-valuenow={Math.floor(current)}
-                onPointerDown={onTrackDown}
-                onPointerMove={onTrackMove}
-                className="group/sb relative flex h-4 cursor-pointer items-center"
-              >
-                <div className="absolute inset-x-0 h-1 overflow-hidden rounded-full bg-fg/20">
-                  <div
-                    className="absolute inset-y-0 left-0 rounded-full bg-fg/25"
-                    style={{ width: `${bufPct}%` }}
-                  />
-                  <div
-                    className="absolute inset-y-0 left-0 rounded-full bg-accent"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <div
-                  className="group-hover/sb:opacity-100 absolute h-3 w-3 -translate-x-1/2 rounded-full bg-accent opacity-0 shadow-glow transition-opacity"
-                  style={{ left: `${pct}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Buttons */}
-            <div className="flex items-center gap-0.5 px-2">
-              <CtrlButton
-                label={playing ? 'Pause' : 'Play'}
-                onClick={togglePlay}
-              >
-                {playing ? <PauseIcon /> : <PlayIcon />}
-              </CtrlButton>
-              {onNext && (
-                <CtrlButton label="Next episode (n)" onClick={onNext}>
-                  <NextIcon />
-                </CtrlButton>
-              )}
-              <CtrlButton label={`Back ${skip}s`} onClick={() => seekBy(-skip)}>
-                <SkipBackIcon seconds={skip} />
-              </CtrlButton>
-              <CtrlButton
-                label={`Forward ${skip}s`}
-                onClick={() => seekBy(skip)}
-              >
-                <SkipFwdIcon seconds={skip} />
-              </CtrlButton>
-
-              <div className="flex items-center">
-                <CtrlButton
-                  label={muted ? 'Unmute' : 'Mute'}
-                  onClick={toggleMute}
-                >
-                  <VolumeIcon muted={muted || volume === 0} />
-                </CtrlButton>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  aria-label="Volume"
-                  value={muted ? 0 : volume}
-                  onChange={(e) => {
-                    setVolume(Number(e.target.value));
-                    setMuted(false);
+            {subIdx >= 0 && (
+              <div className="pointer-events-none absolute inset-0 z-30">
+                <span
+                  onPointerDown={onCapDown}
+                  onPointerMove={onCapMove}
+                  onPointerUp={onCapUp}
+                  className={`pointer-events-auto absolute max-w-[90%] touch-none select-none text-center font-semibold leading-snug ${
+                    capDragging ? 'cursor-grabbing' : 'cursor-grab'
+                  }`}
+                  style={{
+                    ...(capPos
+                      ? {
+                          left: `${capPos.x}%`,
+                          top: `${capPos.y}%`,
+                          transform: 'translate(-50%, -50%)',
+                        }
+                      : {
+                          left: '50%',
+                          bottom: chromeVisible ? '16%' : '7%',
+                          transform: 'translateX(-50%)',
+                          transition: 'bottom 0.2s ease',
+                        }),
+                    fontSize:
+                      CAP_SIZES.find((c) => c.k === capSize)?.css ??
+                      CAP_SIZES[1].css,
+                    whiteSpace: 'pre-line',
+                    color: capColor === 'yellow' ? '#F2D43D' : '#F6F6F8',
+                    // Background/shadow only when there's text — keep the box invisible
+                    // (and unobtrusive) between lines.
+                    ...(cueText
+                      ? {
+                          background: CAP_BG[capBg],
+                          padding: capBg === 'none' ? 0 : '0.12em 0.5em',
+                          borderRadius: 8,
+                          textShadow:
+                            capBg === 'none'
+                              ? '0 1px 3px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.95)'
+                              : 'none',
+                        }
+                      : null),
                   }}
-                  className="ml-0.5 hidden h-1 w-16 cursor-pointer accent-accent sm:block"
-                />
+                >
+                  {cueText ||
+                    (!playing && (
+                      <span className="bg-black/55 inline-block whitespace-nowrap rounded-md border border-dashed border-white/40 px-2 py-0.5 text-xs font-medium text-white/75">
+                        ↔ drag to move captions
+                      </span>
+                    ))}
+                </span>
               </div>
+            )}
 
-              <span className="ml-1 select-none text-xs font-medium tabular-nums text-fg/90">
-                {fmt(current)}
-                <span className="text-fg/45"> / {fmt(duration)}</span>
-              </span>
+            {/* Buffering */}
+            {waiting && (
+              <div className="pointer-events-none absolute inset-0 grid place-items-center">
+                <span className="h-11 w-11 animate-spin rounded-full border-[3px] border-fg/20 border-t-accent" />
+              </div>
+            )}
 
-              <div className="flex-1" />
-
-              <CtrlButton
-                label="Keyboard shortcuts (?)"
-                onClick={() => setHelp((h) => !h)}
+            {/* Center play when paused */}
+            {!playing && !waiting && (
+              <button
+                type="button"
+                aria-label="Play"
+                onClick={togglePlay}
+                className="absolute inset-0 grid place-items-center"
               >
-                <KeyboardIcon />
-              </CtrlButton>
+                <span className="grid h-[68px] w-[68px] place-items-center rounded-full bg-aurora text-accent-ink shadow-glow transition duration-200 hover:scale-105 active:scale-95">
+                  <PlayIcon className="ml-0.5 h-8 w-8" />
+                </span>
+              </button>
+            )}
 
-              {hasSubs && (
-                <CtrlButton
-                  label={subIdx >= 0 ? 'Subtitles on' : 'Subtitles off'}
-                  active={subIdx >= 0}
-                  onClick={toggleCaptions}
-                >
-                  <CcIcon active={subIdx >= 0} />
-                </CtrlButton>
-              )}
-
-              {/* Settings popover */}
-              <div className="relative">
-                <CtrlButton
-                  label="Settings"
-                  active={settings}
-                  onClick={() => setSettings((s) => !s)}
-                >
-                  <SettingsIcon active={settings} />
-                </CtrlButton>
-                {settings && (
-                  <>
+            {/* Keyboard shortcuts overlay */}
+            {help && (
+              <div className="absolute inset-0 z-30 grid place-items-center bg-canvas/80 px-4 backdrop-blur-sm">
+                <div className="w-full max-w-md rounded-2xl border border-line/60 bg-canvas-2/95 p-5 shadow-lift">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h3 className="font-display text-sm font-bold text-fg">
+                      Keyboard shortcuts
+                    </h3>
                     <button
                       type="button"
-                      aria-label="Close settings"
-                      tabIndex={-1}
-                      onClick={() => setSettings(false)}
-                      className="fixed inset-0 z-10 cursor-default"
+                      onClick={() => setHelp(false)}
+                      className="rounded-full px-2 py-0.5 text-xs font-medium text-faint hover:text-fg"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+                    {shortcuts.map(([keys, label]) => (
+                      <div
+                        key={label}
+                        className="flex items-center justify-between gap-3"
+                      >
+                        <dt className="flex items-center gap-1">
+                          {keys.map((key) => (
+                            <Kbd key={key}>{key}</Kbd>
+                          ))}
+                        </dt>
+                        <dd className="text-xs text-muted">{label}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              </div>
+            )}
+
+            {/* Skip intro / outro (AniSkip). Sits above the control scrim, lifts a
+              little when the chrome is visible so it never overlaps the bar. */}
+            {activeSkip && !help && !showUpNext && (
+              <button
+                type="button"
+                onClick={() => skipTo(activeSkip.end)}
+                className={`bg-canvas/85 absolute right-4 z-30 flex items-center gap-2 rounded-lg border border-line/60 px-4 py-2 text-sm font-semibold text-fg shadow-lift backdrop-blur transition hover:border-accent/60 hover:text-accent active:scale-95 sm:right-6 ${
+                  chromeVisible ? 'bottom-24' : 'bottom-8'
+                }`}
+              >
+                {activeSkip.label}
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M5 5l7 7-7 7M13 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+
+            {/* Up next — auto-play countdown in the final seconds. */}
+            {showUpNext && !help && (
+              <div
+                className={`absolute right-4 z-30 w-56 rounded-xl border border-line/60 bg-canvas/90 p-3 shadow-lift backdrop-blur sm:right-6 ${
+                  chromeVisible ? 'bottom-24' : 'bottom-8'
+                }`}
+              >
+                <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-faint">
+                  Up next
+                </p>
+                <p className="mt-0.5 truncate text-sm font-semibold text-fg">
+                  Episode {(episode ?? 0) + 1}
+                </p>
+                <p className="mt-0.5 text-xs text-muted">
+                  Playing in {Math.ceil(nextRemaining)}s
+                </p>
+                <div className="mt-2.5 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onNext?.()}
+                    className="flex-1 rounded-lg bg-aurora px-3 py-1.5 text-xs font-semibold text-accent-ink shadow-glow transition active:scale-95"
+                  >
+                    Play now
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAutoNextDismissed(true)}
+                    className="rounded-lg border border-line/60 px-3 py-1.5 text-xs font-medium text-muted transition hover:text-fg"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Bottom scrim + controls */}
+            <div
+              className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-canvas/95 via-canvas/40 to-transparent pb-2 pt-10 transition-opacity duration-300 ${
+                chromeVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+              }`}
+            >
+              {/* Scrubber */}
+              <div className="px-3">
+                <div
+                  ref={trackRef}
+                  role="slider"
+                  tabIndex={-1}
+                  aria-label="Seek"
+                  aria-valuemin={0}
+                  aria-valuemax={Math.floor(duration)}
+                  aria-valuenow={Math.floor(current)}
+                  onPointerDown={onTrackDown}
+                  onPointerMove={onTrackMove}
+                  className="group/sb relative flex h-4 cursor-pointer items-center"
+                >
+                  <div className="absolute inset-x-0 h-1 overflow-hidden rounded-full bg-fg/20">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full bg-fg/25"
+                      style={{ width: `${bufPct}%` }}
                     />
-                    <div className="absolute bottom-full right-0 z-20 mb-2 max-h-[60vh] w-60 space-y-3 overflow-y-auto rounded-xl border border-line/60 bg-canvas-2/95 p-3 shadow-lift backdrop-blur-md">
-                      {sources.length > 1 && (
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full bg-accent"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div
+                    className="group-hover/sb:opacity-100 absolute h-3 w-3 -translate-x-1/2 rounded-full bg-accent opacity-0 shadow-glow transition-opacity"
+                    style={{ left: `${pct}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex items-center gap-0.5 px-2">
+                <CtrlButton
+                  label={playing ? 'Pause' : 'Play'}
+                  onClick={togglePlay}
+                >
+                  {playing ? <PauseIcon /> : <PlayIcon />}
+                </CtrlButton>
+                {onNext && (
+                  <CtrlButton label="Next episode (n)" onClick={onNext}>
+                    <NextIcon />
+                  </CtrlButton>
+                )}
+                <CtrlButton
+                  label={`Back ${skip}s`}
+                  onClick={() => seekBy(-skip)}
+                >
+                  <SkipBackIcon seconds={skip} />
+                </CtrlButton>
+                <CtrlButton
+                  label={`Forward ${skip}s`}
+                  onClick={() => seekBy(skip)}
+                >
+                  <SkipFwdIcon seconds={skip} />
+                </CtrlButton>
+
+                <div className="flex items-center">
+                  <CtrlButton
+                    label={muted ? 'Unmute' : 'Mute'}
+                    onClick={toggleMute}
+                  >
+                    <VolumeIcon muted={muted || volume === 0} />
+                  </CtrlButton>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    aria-label="Volume"
+                    value={muted ? 0 : volume}
+                    onChange={(e) => {
+                      setVolume(Number(e.target.value));
+                      setMuted(false);
+                    }}
+                    className="ml-0.5 hidden h-1 w-16 cursor-pointer accent-accent sm:block"
+                  />
+                </div>
+
+                <span className="ml-1 select-none text-xs font-medium tabular-nums text-fg/90">
+                  {fmt(current)}
+                  <span className="text-fg/45"> / {fmt(duration)}</span>
+                </span>
+
+                <div className="flex-1" />
+
+                <CtrlButton
+                  label="Keyboard shortcuts (?)"
+                  onClick={() => setHelp((h) => !h)}
+                >
+                  <KeyboardIcon />
+                </CtrlButton>
+
+                {hasSubs && (
+                  <CtrlButton
+                    label={subIdx >= 0 ? 'Subtitles on' : 'Subtitles off'}
+                    active={subIdx >= 0}
+                    onClick={toggleCaptions}
+                  >
+                    <CcIcon active={subIdx >= 0} />
+                  </CtrlButton>
+                )}
+
+                {/* Settings popover */}
+                <div className="relative">
+                  <CtrlButton
+                    label="Settings"
+                    active={settings}
+                    onClick={() => setSettings((s) => !s)}
+                  >
+                    <SettingsIcon active={settings} />
+                  </CtrlButton>
+                  {settings && (
+                    <>
+                      <button
+                        type="button"
+                        aria-label="Close settings"
+                        tabIndex={-1}
+                        onClick={() => setSettings(false)}
+                        className="fixed inset-0 z-10 cursor-default"
+                      />
+                      <div className="absolute bottom-full right-0 z-20 mb-2 max-h-[60vh] w-60 space-y-3 overflow-y-auto rounded-xl border border-line/60 bg-canvas-2/95 p-3 shadow-lift backdrop-blur-md">
+                        {sources.length > 1 && (
+                          <div>
+                            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                              Quality
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {sources.map((s, i) =>
+                                menuChip(s.quality || 'auto', i === qIdx, () =>
+                                  onQuality(i)
+                                )
+                              )}
+                            </div>
+                          </div>
+                        )}
                         <div>
                           <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
-                            Quality
+                            Speed
                           </p>
                           <div className="flex flex-wrap gap-1">
-                            {sources.map((s, i) =>
-                              menuChip(s.quality || 'auto', i === qIdx, () =>
-                                onQuality(i)
+                            {SPEEDS.map((sp) =>
+                              menuChip(
+                                sp === 1 ? '1x' : `${sp}x`,
+                                sp === rate,
+                                () => setRate(sp)
                               )
                             )}
                           </div>
                         </div>
-                      )}
-                      <div>
-                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
-                          Speed
-                        </p>
-                        <div className="flex flex-wrap gap-1">
-                          {SPEEDS.map((sp) =>
-                            menuChip(
-                              sp === 1 ? '1x' : `${sp}x`,
-                              sp === rate,
-                              () => setRate(sp)
-                            )
-                          )}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
-                          Skip interval
-                        </p>
-                        <div className="flex flex-wrap gap-1">
-                          {SKIPS.map((sk) =>
-                            menuChip(`${sk}s`, sk === skip, () => setSkip(sk))
-                          )}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
-                          Autoplay next
-                        </p>
-                        <div className="flex flex-wrap gap-1">
-                          {menuChip('On', autoNext, () => setAutoNext(true))}
-                          {menuChip('Off', !autoNext, () => setAutoNext(false))}
-                        </div>
-                      </div>
-                      {hasSubs ? (
-                        <div className="space-y-2 border-t border-line/40 pt-2.5">
-                          <div>
-                            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
-                              Subtitles
-                            </p>
-                            <div className="flex flex-wrap gap-1">
-                              {menuChip('Off', subIdx < 0, () => setSubIdx(-1))}
-                              {subtitles.map((s, i) =>
-                                menuChip(s.label || s.lang, subIdx === i, () =>
-                                  setSubIdx(i)
-                                )
-                              )}
-                            </div>
+                        <div>
+                          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                            Skip interval
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {SKIPS.map((sk) =>
+                              menuChip(`${sk}s`, sk === skip, () => setSkip(sk))
+                            )}
                           </div>
-                          {subIdx >= 0 && (
+                        </div>
+                        <div>
+                          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                            Autoplay next
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {menuChip('On', autoNext, () => setAutoNext(true))}
+                            {menuChip('Off', !autoNext, () =>
+                              setAutoNext(false)
+                            )}
+                          </div>
+                        </div>
+                        {hasSubs ? (
+                          <div className="space-y-2 border-t border-line/40 pt-2.5">
                             <div>
                               <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
-                                Subtitle delay
+                                Subtitles
                               </p>
-                              <div className="flex items-center gap-1.5">
-                                {menuChip('-0.5s', false, () =>
-                                  setSubOffset((o) =>
-                                    Math.max(
-                                      -60,
-                                      Math.round((o - 0.5) * 10) / 10
-                                    )
+                              <div className="flex flex-wrap gap-1">
+                                {menuChip('Off', subIdx < 0, () =>
+                                  setSubIdx(-1)
+                                )}
+                                {subtitles.map((s, i) =>
+                                  menuChip(
+                                    s.label || s.lang,
+                                    subIdx === i,
+                                    () => setSubIdx(i)
                                   )
                                 )}
-                                <span className="min-w-[3.25rem] text-center text-xs font-semibold tabular-nums text-fg">
-                                  {subOffset > 0 ? '+' : ''}
-                                  {subOffset.toFixed(1)}s
-                                </span>
-                                {menuChip('+0.5s', false, () =>
-                                  setSubOffset((o) =>
-                                    Math.min(
-                                      60,
-                                      Math.round((o + 0.5) * 10) / 10
-                                    )
-                                  )
-                                )}
-                                {subOffset !== 0 &&
-                                  menuChip('Reset', false, () =>
-                                    setSubOffset(0)
-                                  )}
                               </div>
                             </div>
-                          )}
-                          <div>
-                            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
-                              Caption size
-                            </p>
-                            <div className="flex flex-wrap gap-1">
-                              {CAP_SIZES.map((c) =>
-                                menuChip(c.k, capSize === c.k, () =>
-                                  setCapSize(c.k)
-                                )
-                              )}
-                            </div>
-                          </div>
-                          <div>
-                            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
-                              Caption colour
-                            </p>
-                            <div className="flex flex-wrap gap-1">
-                              {menuChip('White', capColor === 'white', () =>
-                                setCapColor('white')
-                              )}
-                              {menuChip('Yellow', capColor === 'yellow', () =>
-                                setCapColor('yellow')
-                              )}
-                            </div>
-                          </div>
-                          <div>
-                            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
-                              Caption background
-                            </p>
-                            <div className="flex flex-wrap gap-1">
-                              {menuChip('Solid', capBg === 'solid', () =>
-                                setCapBg('solid')
-                              )}
-                              {menuChip('Dim', capBg === 'semi', () =>
-                                setCapBg('semi')
-                              )}
-                              {menuChip('None', capBg === 'none', () =>
-                                setCapBg('none')
-                              )}
-                            </div>
-                          </div>
-                          <div>
-                            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
-                              Caption position
-                            </p>
-                            <div className="flex flex-wrap items-center gap-2">
-                              {capPos
-                                ? menuChip('Reset to bottom', false, () =>
-                                    setCapPos(null)
+                            {subIdx >= 0 && (
+                              <div>
+                                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                                  Subtitle delay
+                                </p>
+                                <div className="flex items-center gap-1.5">
+                                  {menuChip('-0.5s', false, () =>
+                                    setSubOffset((o) =>
+                                      Math.max(
+                                        -60,
+                                        Math.round((o - 0.5) * 10) / 10
+                                      )
+                                    )
+                                  )}
+                                  <span className="min-w-[3.25rem] text-center text-xs font-semibold tabular-nums text-fg">
+                                    {subOffset > 0 ? '+' : ''}
+                                    {subOffset.toFixed(1)}s
+                                  </span>
+                                  {menuChip('+0.5s', false, () =>
+                                    setSubOffset((o) =>
+                                      Math.min(
+                                        60,
+                                        Math.round((o + 0.5) * 10) / 10
+                                      )
+                                    )
+                                  )}
+                                  {subOffset !== 0 &&
+                                    menuChip('Reset', false, () =>
+                                      setSubOffset(0)
+                                    )}
+                                </div>
+                              </div>
+                            )}
+                            <div>
+                              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                                Caption size
+                              </p>
+                              <div className="flex flex-wrap gap-1">
+                                {CAP_SIZES.map((c) =>
+                                  menuChip(c.k, capSize === c.k, () =>
+                                    setCapSize(c.k)
                                   )
-                                : null}
-                              <span className="text-[11px] text-faint">
-                                Drag the caption to move it
-                              </span>
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                                Caption colour
+                              </p>
+                              <div className="flex flex-wrap gap-1">
+                                {menuChip('White', capColor === 'white', () =>
+                                  setCapColor('white')
+                                )}
+                                {menuChip('Yellow', capColor === 'yellow', () =>
+                                  setCapColor('yellow')
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                                Caption background
+                              </p>
+                              <div className="flex flex-wrap gap-1">
+                                {menuChip('Solid', capBg === 'solid', () =>
+                                  setCapBg('solid')
+                                )}
+                                {menuChip('Dim', capBg === 'semi', () =>
+                                  setCapBg('semi')
+                                )}
+                                {menuChip('None', capBg === 'none', () =>
+                                  setCapBg('none')
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                                Caption position
+                              </p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {capPos
+                                  ? menuChip('Reset to bottom', false, () =>
+                                      setCapPos(null)
+                                    )
+                                  : null}
+                                <span className="text-[11px] text-faint">
+                                  Drag the caption to move it
+                                </span>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ) : (
-                        <p className="border-t border-line/40 pt-2.5 text-[11px] leading-relaxed text-faint">
-                          No subtitles for this source yet. Indonesian / English
-                          subs are coming, and the styling controls will appear
-                          here.
-                        </p>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
+                        ) : (
+                          <p className="border-t border-line/40 pt-2.5 text-[11px] leading-relaxed text-faint">
+                            No subtitles for this source yet. Indonesian /
+                            English subs are coming, and the styling controls
+                            will appear here.
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
 
-              <span className="hidden sm:block">
-                <CtrlButton label="Picture in picture" onClick={togglePip}>
-                  <PipIcon />
+                <span className="hidden sm:block">
+                  <CtrlButton label="Picture in picture" onClick={togglePip}>
+                    <PipIcon />
+                  </CtrlButton>
+                </span>
+
+                {/* Companion dock toggle — only useful in fullscreen, where the
+                  page right-rail isn't visible. Off fullscreen the companion
+                  lives in the right-rail tab, so we hide this. */}
+                {companionSlot && isFs && (
+                  <CtrlButton
+                    label={chatOpen ? 'Hide companion' : 'Show companion'}
+                    active={chatOpen}
+                    onClick={() => setChatOpen((c) => !c)}
+                  >
+                    <ChatAlt2Icon className="h-[22px] w-[22px]" />
+                  </CtrlButton>
+                )}
+
+                <CtrlButton
+                  label={isFs ? 'Exit fullscreen' : 'Fullscreen'}
+                  onClick={toggleFs}
+                >
+                  {isFs ? <FullExitIcon /> : <FullEnterIcon />}
                 </CtrlButton>
-              </span>
-              <CtrlButton
-                label={isFs ? 'Exit fullscreen' : 'Fullscreen'}
-                onClick={toggleFs}
-              >
-                {isFs ? <FullExitIcon /> : <FullEnterIcon />}
-              </CtrlButton>
+              </div>
             </div>
           </div>
+
+          {/* Companion dock (YouTube-theater). Lives INSIDE the fullscreen
+              element so it shows over the video while fullscreen; the video
+              region (flex-1, above) shrinks to keep the whole frame visible
+              beside it. Scrolls internally and is full stage height. */}
+          {showDock && (
+            <aside
+              aria-label="Watch companion"
+              onPointerDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              className="flex h-full w-[22rem] shrink-0 flex-col overflow-y-auto border-l border-line/60 bg-canvas-2/95 backdrop-blur sm:w-[24rem]"
+            >
+              {companionSlot}
+            </aside>
+          )}
         </div>
       </div>
 
