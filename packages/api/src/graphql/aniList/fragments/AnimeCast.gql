@@ -1,0 +1,34 @@
+fragment AnimeCast on Media {
+  studios {
+    edges {
+      isMain
+      node {
+        id
+        name
+      }
+    }
+  }
+  characters(sort: [ROLE, RELEVANCE], perPage: 12) {
+    edges {
+      role
+      node {
+        id
+        name {
+          full
+        }
+        image {
+          medium
+        }
+      }
+      voiceActors(language: JAPANESE) {
+        id
+        name {
+          full
+        }
+        image {
+          medium
+        }
+      }
+    }
+  }
+}
