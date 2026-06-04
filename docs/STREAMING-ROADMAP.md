@@ -338,6 +338,29 @@ test pending:
   1:1 onto AniList's MediaListStatus and pushes straight up; pull mirrors AniList's status
   locally. Without an explicit pick the status is still derived from progress.
 
+### 8b. Friend-feedback round (2026-06-04, round 2) — SHIPPED via PRs #1-#5
+
+First batch built under the new PPRM flow (CLAUDE.md §4): a branch + PR per feature, all
+merged to `main`. tsc + eslint clean on the integrated tree; in-browser smoke (watch page
+renders, 0 console errors) done — the fullscreen companion dock still wants a real-browser look.
+
+- **Watch Later rail (PR #3)** — a home rail below "My List" listing PLANNING ("Plan to Watch")
+  titles (`components/anime/WatchLaterRail.tsx`, mounted in `pages/home.tsx`); `WatchlistButton`
+  gained an optional Watch-Later quick-save. Reuses the existing status store, hidden when empty.
+- **Voice-actor + studio discovery (PR #4 + the cast-GraphQL foundation, PR #2)** — `AnimeCast`
+  fragment (studios + characters + JP voice actors) on `animePage`/`watchPage`; new SDK ops
+  `studioPage` / `staffPage` / `searchStudios` / `searchStaff`. The detail page shows the studio
+  (→ `/studio/[id]`) and a Cast section (character + VA → `/staff/[id]`); new `/studio/[id]` and
+  `/staff/[id]` grids; `search` gained Anime / Studios / Voice actors tabs (`?type=`). (AniList's
+  Media query can't filter by studio/staff, hence the dedicated `Studio`/`Staff` entry points.)
+- **Companion fullscreen + persistence + richer grounding (PR #5)** — see §11; the companion now
+  docks on the right inside the player's fullscreen stage (toggle in the controls, video shrinks),
+  per-episode chat threads persist in localStorage (capped ~10) and are shared by the rail +
+  fullscreen instances, and the prompt is bounded to "you know the show up to episode N" with a
+  low-spoiler cast roster seeded for sharper, less generic, still spoiler-safe takes. A
+  `scripts/companion-eval` harness scores spoiler-safety / grounding / tone / specificity /
+  coherence for iterating the prompt.
+
 ## 9. Local host runbook (laptop) + VPS migration off-ramp
 
 The Option B stack runs via Docker Compose in `services/source-service/`
@@ -491,6 +514,13 @@ code-complete, tsc + eslint clean, UI + route + anti-spoiler wiring verified in 
 The one thing left is a free API key** — drop a Gemini key into `COMPANION_API_KEY` and restart,
 and the setup note becomes the live companion. The design below is what it was built to; the
 "Shipped" list records the actual files.
+
+**Round-2 upgrades shipped 2026-06-04 (PR #5, see §8b):** a fullscreen "theater" dock (chat on the
+right inside the fullscreen stage, video shrinks), per-episode chat threads persisted in
+localStorage (capped ~10, shared by the rail + fullscreen instances), a low-spoiler cast roster +
+"you know the show up to episode N" prompt bounding for sharper, still spoiler-safe replies, and a
+`scripts/companion-eval` harness for iterating the prompt. Switched the default model to
+`gemini-2.5-flash` (the 2.0-flash free tier is zeroed for new keys).
 
 Why it earns the work: people who watch niche titles have nobody around to talk to about them. An
 always-there persona that can talk about *this* episode, in the Kessoku-Band voice, is real

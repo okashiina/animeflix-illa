@@ -106,6 +106,12 @@ These are pure frontend + AniList GraphQL, high value, low risk:
    *can* get from an embed, since the iframe is cross-origin).
 7. **Polish:** theme switcher (we have tokens), PWA install, a `/status` page + Discord
    link, OP/ED player (AniList has theme data via AnimeThemes).
+8. **Watch Later rail — BUILT (2026-06-04, round 2):** a home rail of PLANNING titles below
+   My List. AniList-synced via the existing status store.
+9. **Voice-actor + studio discovery — BUILT (2026-06-04, round 2):** cast (character + JP VA)
+   + studio on the detail page, dedicated `/studio/[id]` + `/staff/[id]` pages, and
+   Anime / Studios / Voice actors search tabs. No rival in the matrix surfaces VA/studio
+   browsing; all AniList GraphQL. See STREAMING-ROADMAP §8b.
 
 > Honest constraint: **resume-position, skip intro/outro, PiP, auto-next, soft subs
 > (incl. Indonesian) are NOT possible over a cross-origin embed iframe** — we can't read
