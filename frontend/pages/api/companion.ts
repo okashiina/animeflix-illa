@@ -30,7 +30,7 @@ const UNCENSORED_BASE = (
 ).replace(/\/$/, '');
 const UNCENSORED_MODEL =
   process.env.COMPANION_UNCENSORED_MODEL ||
-  'cognitivecomputations/dolphin3.0-mistral-24b:free';
+  'cognitivecomputations/dolphin-mistral-24b-venice-edition:free';
 
 // --- Persona ---------------------------------------------------------------
 // The companion is the friend in the next seat at a tiny live house. Voice is a
@@ -213,64 +213,72 @@ const handler = async (
     { role: 'user', content: clip(message, 1500) },
   ];
 
-  // Route the opted-in "unhinged" tone to the uncensored provider when one is
-  // configured; every other tone (and unhinged without a key) uses the default.
+  // One chat-completion call against a given OpenAI-compatible provider. Returns
+  // the reply text, or null on any failure (so the caller can fall back).
+  const callOnce = async (
+    cBase: string,
+    cKey: string,
+    cModel: string,
+    temperature: number,
+    extra?: Record<string, string>
+  ): Promise<string | null> => {
+    try {
+      const upstream = await fetch(`${cBase}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${cKey}`,
+          ...(extra || {}),
+        },
+        body: JSON.stringify({
+          model: cModel,
+          messages,
+          temperature,
+          max_tokens: 400,
+        }),
+      });
+      if (!upstream.ok) {
+        const detail = await upstream.text().catch(() => '');
+        // eslint-disable-next-line no-console
+        console.error(
+          '[companion] upstream',
+          cModel,
+          upstream.status,
+          detail.slice(0, 200)
+        );
+        return null;
+      }
+      const json = (await upstream.json()) as {
+        choices?: { message?: { content?: string } }[];
+      };
+      return json.choices?.[0]?.message?.content?.trim() || null;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[companion] fetch failed', cModel, err);
+      return null;
+    }
+  };
+
+  // Opted-in unhinged → the uncensored provider; if it fails (free OpenRouter
+  // pools rate-limit intermittently) fall back to the default provider so the
+  // viewer still gets a reply (edgy but capped) instead of an error.
   const uncensored = Boolean(
     body.tone === 'unhinged' && body.mature && UNCENSORED_KEY
   );
-  const base = uncensored ? UNCENSORED_BASE : API_BASE;
-  const key = uncensored ? UNCENSORED_KEY : API_KEY;
-  const model = uncensored ? UNCENSORED_MODEL : MODEL;
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${key}`,
-  };
-  // OpenRouter ranks/labels calls by these optional headers; harmless elsewhere.
-  if (uncensored) {
-    headers['HTTP-Referer'] = 'https://kessokumoe.up.railway.app';
-    headers['X-Title'] = 'kessoku moe companion';
+
+  let reply = uncensored
+    ? await callOnce(UNCENSORED_BASE, UNCENSORED_KEY, UNCENSORED_MODEL, 1, {
+        'HTTP-Referer': 'https://kessokumoe.up.railway.app',
+        'X-Title': 'kessoku moe companion',
+      })
+    : null;
+  if (!reply) reply = await callOnce(API_BASE, API_KEY, MODEL, 0.85);
+
+  if (!reply) {
+    res.status(502).json({ error: 'upstream_error' });
+    return;
   }
-
-  try {
-    const upstream = await fetch(`${base}/chat/completions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: uncensored ? 1 : 0.85,
-        max_tokens: 400,
-      }),
-    });
-
-    if (!upstream.ok) {
-      const detail = await upstream.text().catch(() => '');
-      // eslint-disable-next-line no-console
-      console.error(
-        '[companion] upstream',
-        upstream.status,
-        detail.slice(0, 300)
-      );
-      res
-        .status(502)
-        .json({ error: 'upstream_error', status: upstream.status });
-      return;
-    }
-
-    const json = (await upstream.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
-    const reply = json.choices?.[0]?.message?.content?.trim() || '';
-    if (!reply) {
-      res.status(502).json({ error: 'empty_reply' });
-      return;
-    }
-    res.status(200).json({ reply });
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('[companion] fetch failed', err);
-    res.status(502).json({ error: 'network_error' });
-  }
+  res.status(200).json({ reply });
 };
 
 export default handler;
