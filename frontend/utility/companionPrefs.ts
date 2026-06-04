@@ -26,14 +26,17 @@ export interface ToneOption {
 }
 
 // Order shown in the picker. Adaptive leads because it is the safest default.
+// Labels are the friendly, brand-voiced names the landing page advertises, so
+// the picker reads the same as the marketing. The `id` values are the API
+// contract and must not change (companion.ts routes on them).
 export const COMPANION_TONES: ToneOption[] = [
   { id: 'adaptive', label: 'Adaptive', blurb: 'Matches your energy.' },
-  { id: 'analytical', label: 'Analytical', blurb: 'Reads it deep.' },
-  { id: 'hype', label: 'Hype buddy', blurb: 'Loud, fun, all jokes.' },
-  { id: 'melancholic', label: 'Melancholic', blurb: 'Sits in the feels.' },
+  { id: 'analytical', label: 'Thoughtful', blurb: 'Reads it deep.' },
+  { id: 'hype', label: 'Hyped', blurb: 'Loud, fun, all jokes.' },
+  { id: 'melancholic', label: 'Soft', blurb: 'Sits in the feels.' },
   {
     id: 'unhinged',
-    label: 'Unhinged',
+    label: 'Off the rails',
     blurb: 'Crude and unfiltered.',
     mature: true,
   },

@@ -371,6 +371,20 @@ renders, 0 console errors) done — the fullscreen companion dock still wants a 
   both cleared **only on a confirmed AniList write**; a failed pull or push is a no-op that retries
   on the next sync. `pointer-events-none` on the card play overlay fixes the click-through. tsc +
   eslint clean; the card fix is browser-verified, the AniList round-trip needs a logged-in check.
+- **Landing page that sells the flagship features (2026-06-04, branch `feat/landing-sell`)** — the
+  old splash only advertised "no pop-ups + browse + schedule". Rebuilt the middle of
+  `pages/index.tsx` into four alternating feature blocks with bespoke, on-brand mockups:
+  **AI companion** (an interactive chat demo whose tone chips swap the reply live), **AniList sync +
+  Watch Later** (a synced list-entry card showing a real Frieren cover pulled in the splash query),
+  **custom player** (skip-intro / auto-next / captions / quality control bar), and **filler vs
+  canon** (the colored episode grid). Plus a lighter "the rest of the setlist" strip (schedule,
+  one-click server switch, VA/studio discovery, PWA) and refreshed hero + chips + CTA copy. The
+  companion's in-player tone labels were renamed to the friendlier marketing set (Adaptive /
+  Thoughtful / Hyped / Soft / Off the rails) so the picker matches the landing; the API `id` values
+  are unchanged. Brand-voiced (no AI-slop, no em dashes), Midnight-Aurora tokens, no design bans;
+  tsc + eslint clean, verified at desktop + mobile. **Honest caveat:** on the public embed-only
+  Railway deploy the companion needs `COMPANION_API_KEY` set to be live, and the per-scene player
+  features are fullest on the direct/source-service player.
 
 ## 9. Local host runbook (laptop) + VPS migration off-ramp
 

@@ -264,7 +264,8 @@ const CompanionChat: React.FC<{
                 {confirmMature && (
                   <div className="m-1 rounded-lg border border-line/60 bg-surface/60 p-2.5">
                     <p className="text-[11px] leading-snug text-muted">
-                      Unhinged is 18+. It gets crude and sweary. Turn it on?
+                      Off the rails is 18+. It gets crude and sweary. Turn it
+                      on?
                     </p>
                     <div className="mt-2 flex gap-2">
                       <button
