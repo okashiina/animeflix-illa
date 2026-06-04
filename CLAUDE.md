@@ -29,7 +29,31 @@ Invoke these skills (Skill tool) before/while doing the matching work — not op
   embed iframe playing in a real browser), say so explicitly — state what you did
   verify vs. what still needs the user's check. Don't imply it's confirmed.
 
-## 4. Project context (quick orientation)
+## 4. Branching & PR workflow (PPRM) — mandatory, shared repo
+This is now a **shared project with a collaborator**, so traceability matters. Do NOT
+commit straight to `main`. Every finished feature or fix follows **PPRM**:
+
+1. **Branch** off up-to-date `main`: `git checkout main && git pull`, then
+   `git checkout -b <type>/<slug>` (`feat/…`, `fix/…`, `docs/…`, `chore/…`).
+2. Commit there (small, focused commits). End every commit with the trailer:
+   `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
+3. **Push** the branch: `git push -u origin <branch>`.
+4. **Pull Request** via the gh CLI: `gh pr create` with a clear title + body
+   (what/why, how verified). End the PR body with the Claude / Generated-with trailer.
+5. **Merge** into `main` (`gh pr merge --squash --delete-branch`) once it is green and
+   verified. `main` must always stay releasable (Railway auto-deploys every push to it).
+
+**Independent features may be built in parallel** (separate branches / git worktrees),
+but keep each branch's file set disjoint so merges stay conflict-free, and never add a
+dependency in a feature branch without flagging the lockfile change.
+
+**Per-feature "done" checklist** (before opening the PR):
+- `tsc -p frontend --noEmit` clean + `next lint` clean (run from the `frontend` dir).
+- In-browser smoke check of the actual change (say what you verified vs. couldn't).
+- Update [docs/STREAMING-ROADMAP.md](docs/STREAMING-ROADMAP.md),
+  [docs/COMPETITIVE-ANALYSIS.md](docs/COMPETITIVE-ANALYSIS.md), and memory to mark it shipped.
+
+## 5. Project context (quick orientation)
 - Next.js + Turborepo monorepo (`frontend`, `packages/*`). Deploys on Railway
   project "anime-happy" (GitHub-connected, watch paths cleared, Dockerfile build).
 - The old GogoAnime source is permanently dead. Video currently uses a **third-party
