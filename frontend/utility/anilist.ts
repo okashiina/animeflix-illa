@@ -215,13 +215,23 @@ export interface SplashData {
    * trending (center), one from this season. Rotates weekly (see pickWeekly).
    */
   featured: MediaInfo[];
+  /** A real cover for the landing "synced to AniList" mockup (Frieren). */
+  demoCover: string;
 }
+
+// Frieren: Beyond Journey's End — the worked example on the landing mockups. The
+// cover is fetched live in the splash query; this is the last-resort fallback so
+// the "synced" card is never blank even if that field fails.
+const DEMO_ANIME_ID = 154587;
+const DEMO_COVER_FALLBACK =
+  'https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx154587-qQTzQnEJJ3oB.jpg';
 
 interface RawSplash {
   trending: RawPage<MediaInfo> | null;
   popular: RawPage<MediaInfo> | null;
   thisSeason: RawPage<MediaInfo> | null;
   airing: { airingSchedules: AiringEntry[] } | null;
+  demo: { coverImage: { large: string | null; medium: string | null } } | null;
 }
 
 const SPLASH_QUERY = /* GraphQL */ `
@@ -256,6 +266,9 @@ const SPLASH_QUERY = /* GraphQL */ `
         airingAt
         media { ${INFO_FIELDS} }
       }
+    }
+    demo: Media(id: ${DEMO_ANIME_ID}, type: ANIME) {
+      coverImage { large medium }
     }
   }
 `;
@@ -325,9 +338,18 @@ export const fetchSplashData = async (): Promise<SplashData> => {
       ),
       // Order is popular, trending, season so trending lands center of the fan.
       featured: pickWeekly([popular, trending, thisSeason]),
+      demoCover:
+        data.demo?.coverImage?.large ||
+        data.demo?.coverImage?.medium ||
+        DEMO_COVER_FALLBACK,
     };
   } catch {
-    return { trending: [], airing: [], featured: [] };
+    return {
+      trending: [],
+      airing: [],
+      featured: [],
+      demoCover: DEMO_COVER_FALLBACK,
+    };
   }
 };
 

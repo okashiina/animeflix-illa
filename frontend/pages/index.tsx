@@ -8,14 +8,17 @@ import { useRouter } from 'next/router';
 import { AnimeInfoFragment } from '@animeflix/api/aniList';
 import {
   ArrowRightIcon,
+  BadgeCheckIcon,
+  BookmarkIcon,
   CalendarIcon,
+  ChartBarIcon,
+  ChatAlt2Icon,
   CheckCircleIcon,
-  CollectionIcon,
   DeviceMobileIcon,
-  FilterIcon,
-  FireIcon,
-  ServerIcon,
-  SparklesIcon,
+  FastForwardIcon,
+  SwitchHorizontalIcon,
+  TranslateIcon,
+  UserGroupIcon,
 } from '@heroicons/react/outline';
 import { PlayIcon } from '@heroicons/react/solid';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -143,29 +146,220 @@ const PosterFan: React.FC<{ items: MediaInfo[] }> = ({ items }) => {
   );
 };
 
-const ServerMock: React.FC = () => (
-  <div className="mx-auto max-w-sm rounded-2xl border border-line/50 bg-surface/40 p-5 backdrop-blur-sm">
-    <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-faint">
-      choose server
-    </p>
-    <div className="flex flex-wrap gap-2">
-      {['Server 1', 'Server 2', 'Server 3'].map((label, i) => (
-        <span
-          key={label}
-          className={
-            i === 0
-              ? 'rounded-full bg-aurora px-3.5 py-1.5 text-sm font-semibold text-accent-ink shadow-glow'
-              : 'rounded-full border border-line/70 bg-surface/60 px-3.5 py-1.5 text-sm text-muted'
-          }
-        >
-          {label}
+// A spoiler-safe chat exchange with the watch companion. The tone chips are
+// live: tap one and the same question gets answered in that persona. Labels
+// match the real companion's tones (utility/companionPrefs.ts).
+const COMPANION_DEMO: { id: string; reply: string }[] = [
+  {
+    id: 'hyped',
+    reply:
+      "OHHH the white-haired one?? That's Frieren, an absolute powerhouse and instantly iconic. you are so gonna love her, that is ALL I'm saying.",
+  },
+  {
+    id: 'thoughtful',
+    reply:
+      "That's Frieren. The show frames her as someone time moves differently for, so watch how she holds people at arm's length. You have only just met her, so I'll leave it there.",
+  },
+  {
+    id: 'soft',
+    reply:
+      "That's Frieren. She carries this quiet, faraway sadness, like she is always half a step outside the moment. You'll feel it more as the story goes.",
+  },
+  {
+    id: 'off the rails',
+    reply:
+      "the silver-haired menace? that's Frieren. struts around like she pays rent in everyone's head and owes nothing. iconic behavior. I'll zip it before I spoil anything.",
+  },
+];
+
+const CompanionMock: React.FC = () => {
+  const reduced = useReducedMotion();
+  const [tone, setTone] = useState('thoughtful');
+  const active = COMPANION_DEMO.find((t) => t.id === tone) ?? COMPANION_DEMO[1];
+
+  return (
+    <div className="mx-auto max-w-sm rounded-2xl border border-line/50 bg-canvas-2/70 p-4 shadow-card">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-aurora text-accent-ink">
+          <ChatAlt2Icon className="h-4 w-4" aria-hidden />
         </span>
+        <span className="text-sm font-semibold text-fg">your seat-mate</span>
+        <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-faint">
+          <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />
+          spoiler-safe
+        </span>
+      </div>
+      <div className="space-y-2">
+        <p className="ml-auto w-fit max-w-[82%] rounded-2xl rounded-br-sm bg-surface-2 px-3 py-2 text-sm text-fg">
+          wait, who was the white-haired elf again?
+        </p>
+        <motion.p
+          key={tone}
+          initial={reduced ? false : { opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: EASE }}
+          className="w-fit max-w-[90%] rounded-2xl rounded-bl-sm bg-surface px-3 py-2 text-sm text-muted"
+        >
+          {active.reply}
+        </motion.p>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        {COMPANION_DEMO.map(({ id }) => {
+          const on = id === tone;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTone(id)}
+              aria-pressed={on}
+              className={
+                on
+                  ? 'rounded-full bg-aurora px-2.5 py-1 text-[11px] font-semibold text-accent-ink transition'
+                  : 'rounded-full border border-line/60 bg-surface/60 px-2.5 py-1 text-[11px] text-muted transition hover:border-accent/50 hover:text-fg'
+              }
+            >
+              {id}
+            </button>
+          );
+        })}
+        <span className="ml-auto text-[11px] text-faint">tap a mood</span>
+      </div>
+    </div>
+  );
+};
+
+// An AniList list entry, synced: status + auto-counted progress. `cover` is a
+// real poster (Frieren) from getServerSideProps, so the card is never blank.
+const SyncMock: React.FC<{ cover: string }> = ({ cover }) => (
+  <div className="mx-auto max-w-sm rounded-2xl border border-line/50 bg-canvas-2/70 p-5 shadow-card">
+    <div className="mb-4 flex items-center gap-2">
+      <BadgeCheckIcon className="h-4 w-4 text-accent" aria-hidden />
+      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-faint">
+        synced to AniList
+      </span>
+    </div>
+    <div className="flex items-center gap-3">
+      <span className="relative h-14 w-10 shrink-0 overflow-hidden rounded-lg bg-surface-2">
+        {cover ? (
+          <Image alt="" src={cover} layout="fill" objectFit="cover" />
+        ) : null}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-fg">
+          Frieren: Beyond Journey&apos;s End
+        </p>
+        <div className="mt-1 flex items-center gap-2">
+          <span className="rounded-full bg-aurora px-2 py-0.5 text-[11px] font-semibold text-accent-ink">
+            Watching
+          </span>
+          <span className="text-xs tabular-nums text-muted">
+            episode 7 / 28
+          </span>
+        </div>
+      </div>
+    </div>
+    <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface">
+      <div className="h-full w-1/4 rounded-full bg-aurora" />
+    </div>
+    <div className="mt-4 flex items-center justify-between">
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+        <CheckCircleIcon className="h-4 w-4 text-accent" aria-hidden />
+        counts itself as you watch
+      </span>
+      <span className="inline-flex items-center gap-1 rounded-full border border-line/60 bg-surface/60 px-2.5 py-1 text-[11px] text-muted">
+        <BookmarkIcon className="h-3.5 w-3.5" aria-hidden />
+        Watch Later
+      </span>
+    </div>
+  </div>
+);
+
+// The custom player control bar: skip intro, captions, speed.
+const PlayerMock: React.FC = () => (
+  <div className="mx-auto max-w-md rounded-2xl border border-line/50 bg-canvas-2/70 p-4 shadow-card">
+    <div className="relative h-1.5 w-full rounded-full bg-surface">
+      <div className="absolute inset-y-0 left-0 w-2/5 rounded-full bg-aurora" />
+      <span
+        className="absolute -top-1 left-[40%] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-accent shadow-glow"
+        aria-hidden
+      />
+    </div>
+    <div className="mt-3 flex items-center gap-3">
+      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-aurora text-accent-ink shadow-glow">
+        <PlayIcon className="ml-0.5 h-4 w-4" aria-hidden />
+      </span>
+      <span className="text-xs tabular-nums text-muted">12:04 / 23:40</span>
+      <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-accent/50 bg-surface/60 px-3 py-1 text-xs font-semibold text-accent">
+        <FastForwardIcon className="h-4 w-4" aria-hidden />
+        Skip Intro
+      </span>
+      <TranslateIcon className="h-5 w-5 text-muted" aria-hidden />
+      <span className="text-xs font-semibold text-muted">1x</span>
+    </div>
+    <p className="mt-3 text-[11px] text-faint">
+      skip intro · auto-next · captions you can drag · up to 1080p
+    </p>
+  </div>
+);
+
+// The episode list with canon / filler / mixed tags, mirroring the watch page.
+const FILLER_KINDS = [
+  'canon',
+  'canon',
+  'canon',
+  'filler',
+  'canon',
+  'mixed',
+  'canon',
+  'canon',
+  'filler',
+  'filler',
+  'canon',
+  'mixed',
+];
+const FILLER_BARS: Record<string, string> = {
+  canon: 'bg-emerald-400/80',
+  filler: 'bg-amber-400/80',
+  mixed: 'bg-gradient-to-r from-emerald-400/80 to-amber-400/80',
+};
+const fillerBar = (kind: string): string =>
+  FILLER_BARS[kind] ?? FILLER_BARS.canon;
+const FillerMock: React.FC = () => (
+  <div className="mx-auto max-w-md rounded-2xl border border-line/50 bg-canvas-2/70 p-5 shadow-card">
+    <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-faint">
+      episodes
+    </p>
+    <div className="grid grid-cols-6 gap-2">
+      {FILLER_KINDS.map((kind, i) => (
+        <div
+          key={`ep-${i + 1}`}
+          className="rounded-lg border border-line/40 bg-surface/60 px-1 pb-1 pt-1.5 text-center"
+        >
+          <span className="block text-xs font-semibold text-fg">{i + 1}</span>
+          <span
+            className={`mt-1 block h-1 rounded-full ${fillerBar(kind)}`}
+            aria-hidden
+          />
+        </div>
       ))}
     </div>
-    <p className="mt-4 inline-flex items-center gap-2 text-sm text-muted">
-      <CheckCircleIcon className="h-4 w-4 text-accent" aria-hidden />
-      now playing from Server 1
-    </p>
+    <div className="mt-4 flex flex-wrap items-center gap-3 text-[11px] text-muted">
+      <span className="inline-flex items-center gap-1.5">
+        <span className="h-2 w-2 rounded-full bg-emerald-400/80" aria-hidden />
+        canon
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="h-2 w-2 rounded-full bg-amber-400/80" aria-hidden />
+        filler
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          className="h-2 w-2 rounded-full bg-gradient-to-r from-emerald-400/80 to-amber-400/80"
+          aria-hidden
+        />
+        mixed
+      </span>
+    </div>
   </div>
 );
 
@@ -335,8 +529,8 @@ const Hero: React.FC<{ covers: string[] }> = ({ covers }) => {
             variants={heroItem}
             className="mt-6 max-w-xl text-base leading-relaxed text-muted sm:text-lg"
           >
-            Thousands of titles, no pop-ups, no sign-up. Hit play and it picks
-            up right where you left off.
+            Thousands of titles, no pop-ups, no sign-up. Skip the intro, track
+            every episode, and bring a seat-mate who never spoils the ending.
           </motion.p>
 
           <motion.div
@@ -374,6 +568,7 @@ const Splash = ({
   trending,
   airing,
   featured,
+  demoCover,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) => {
   const router = useRouter();
 
@@ -401,99 +596,170 @@ const Splash = ({
 
         {/* Credential strip */}
         <RevealStagger className="mx-auto -mt-4 flex max-w-screen-2xl flex-wrap gap-2.5 px-4 sm:px-6 lg:px-8">
-          <Chip icon={CollectionIcon}>AniList catalog</Chip>
-          <Chip icon={SparklesIcon}>fresh every season</Chip>
-          <Chip icon={FilterIcon}>browse + filter</Chip>
-          <Chip icon={CalendarIcon}>schedule + countdowns</Chip>
-          <Chip icon={DeviceMobileIcon}>installable (PWA)</Chip>
+          <Chip icon={BadgeCheckIcon}>AniList sync</Chip>
+          <Chip icon={ChatAlt2Icon}>watch companion</Chip>
+          <Chip icon={ChartBarIcon}>filler vs canon</Chip>
+          <Chip icon={FastForwardIcon}>skip intro + auto-next</Chip>
+          <Chip icon={DeviceMobileIcon}>installable</Chip>
         </RevealStagger>
 
         {/* Features */}
         <section className="mx-auto mt-24 max-w-screen-2xl px-4 sm:px-6 lg:px-8">
-          <Reveal className="mb-12 max-w-2xl">
+          <Reveal className="mb-14 max-w-2xl">
             <h2 className="font-display text-3xl font-bold tracking-tight text-fg sm:text-4xl">
-              Most anime sites make you work for it
+              More than a play button
             </h2>
             <p className="mt-3 text-muted">
-              Pop-ups, dead links, five servers before one loads. kessoku moe
-              skips all that so you can actually watch something.
+              Skipping the pop-ups and dead links is the low bar. kessoku moe
+              clears it, then keeps going: a companion in the next seat, your
+              list synced, filler flagged before you click, a player tuned to
+              stay out of your way.
             </p>
           </Reveal>
 
-          <div className="space-y-20">
-            {/* Block 1 */}
+          <div className="space-y-20 lg:space-y-28">
+            {/* Companion */}
             <Reveal>
               <div className="flex flex-col gap-10 lg:flex-row lg:items-center lg:gap-16">
                 <div className="lg:w-1/2">
-                  <FeatureEyebrow icon={FireIcon}>watch</FeatureEyebrow>
+                  <FeatureEyebrow icon={ChatAlt2Icon}>companion</FeatureEyebrow>
                   <h3 className="mt-3 font-display text-2xl font-bold text-fg sm:text-3xl">
-                    Jump straight to the good stuff
+                    Someone to watch it with
                   </h3>
                   <p className="mt-4 max-w-md leading-relaxed text-muted">
-                    Trending now, this season&apos;s biggest, and the all-time
-                    favorites. It&apos;s all on the home page. Pick one and hit
-                    play.
+                    A seat-mate who talks about the episode while it plays. Ask
+                    who that side character was, or what the ending meant. It
+                    only knows as far as you&apos;ve watched, so it never spoils
+                    what&apos;s next. Pick its mood: hyped, thoughtful, soft, or
+                    completely off the rails.
                   </p>
                 </div>
                 <div className="lg:w-1/2">
-                  <PosterFan
-                    items={featured.length > 0 ? featured : trending}
-                  />
+                  <CompanionMock />
                 </div>
               </div>
             </Reveal>
 
-            {/* Block 2 */}
+            {/* AniList sync */}
             <Reveal>
               <div className="flex flex-col gap-10 lg:flex-row-reverse lg:items-center lg:gap-16">
                 <div className="lg:w-1/2">
-                  <FeatureEyebrow icon={CalendarIcon}>schedule</FeatureEyebrow>
+                  <FeatureEyebrow icon={BadgeCheckIcon}>
+                    your list
+                  </FeatureEyebrow>
                   <h3 className="mt-3 font-display text-2xl font-bold text-fg sm:text-3xl">
-                    Know exactly when the next episode drops
+                    Sign in once, your list follows you
                   </h3>
                   <p className="mt-4 max-w-md leading-relaxed text-muted">
-                    Every show airing this week, counted down to the minute. No
-                    more guessing when a release lands.
+                    Connect AniList and it all lines up: what you&apos;re
+                    watching, what you finished, what&apos;s still on the pile.
+                    Episodes count themselves as you go, and your status lands
+                    back on your AniList profile. Not ready for a title yet?
+                    Drop it in Watch Later, right on the home page.
                   </p>
                 </div>
                 <div className="lg:w-1/2">
-                  {airing.length > 0 ? (
-                    <div className="flex justify-center gap-4">
-                      {airing.slice(0, 2).map((entry) => (
-                        <AiringCard
-                          key={`${entry.media?.id}-${entry.episode}`}
-                          entry={entry}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="mx-auto max-w-sm rounded-2xl border border-line/50 bg-surface/40 p-6 text-center text-muted backdrop-blur-sm">
-                      This week&apos;s airing schedule shows up here.
-                    </div>
-                  )}
+                  <SyncMock cover={demoCover} />
                 </div>
               </div>
             </Reveal>
 
-            {/* Block 3 */}
+            {/* Player */}
             <Reveal>
               <div className="flex flex-col gap-10 lg:flex-row lg:items-center lg:gap-16">
                 <div className="lg:w-1/2">
-                  <FeatureEyebrow icon={ServerIcon}>player</FeatureEyebrow>
+                  <FeatureEyebrow icon={FastForwardIcon}>player</FeatureEyebrow>
                   <h3 className="mt-3 font-display text-2xl font-bold text-fg sm:text-3xl">
-                    Plenty of servers, one click to switch
+                    A player that gets out of your way
                   </h3>
                   <p className="mt-4 max-w-md leading-relaxed text-muted">
-                    One source buffering? Switch to the next in a click. No
-                    reload, no losing your place.
+                    Skip the intro with one tap. Auto-play rolls you into the
+                    next episode. Captions come in a few languages, drag them
+                    where you like, nudge the timing when they drift. Set your
+                    speed and quality, then let the keyboard do the rest.
                   </p>
                 </div>
                 <div className="lg:w-1/2">
-                  <ServerMock />
+                  <PlayerMock />
+                </div>
+              </div>
+            </Reveal>
+
+            {/* Filler vs canon */}
+            <Reveal>
+              <div className="flex flex-col gap-10 lg:flex-row-reverse lg:items-center lg:gap-16">
+                <div className="lg:w-1/2">
+                  <FeatureEyebrow icon={ChartBarIcon}>
+                    no filler surprises
+                  </FeatureEyebrow>
+                  <h3 className="mt-3 font-display text-2xl font-bold text-fg sm:text-3xl">
+                    Know what&apos;s canon before you commit
+                  </h3>
+                  <p className="mt-4 max-w-md leading-relaxed text-muted">
+                    Every episode is tagged canon, filler, or a mix, right on
+                    the episode list. Skip the padding on a long-runner, or
+                    watch all of it on purpose. Either way you go in with your
+                    eyes open.
+                  </p>
+                </div>
+                <div className="lg:w-1/2">
+                  <FillerMock />
                 </div>
               </div>
             </Reveal>
           </div>
+        </section>
+
+        {/* The rest */}
+        <section className="mx-auto mt-24 max-w-screen-2xl px-4 sm:px-6 lg:px-8">
+          <Reveal>
+            <div className="flex flex-col gap-12 lg:flex-row lg:items-center lg:gap-16">
+              <div className="lg:w-1/2">
+                <h2 className="font-display text-2xl font-bold tracking-tight text-fg sm:text-3xl">
+                  The rest of the setlist
+                </h2>
+                <ul className="mt-6 space-y-5">
+                  {[
+                    {
+                      icon: CalendarIcon,
+                      title: 'Airing schedule',
+                      body: 'See exactly when the next episode lands, down to the minute.',
+                    },
+                    {
+                      icon: SwitchHorizontalIcon,
+                      title: 'One-click server switch',
+                      body: 'If a source stalls, jump to another without losing your place.',
+                    },
+                    {
+                      icon: UserGroupIcon,
+                      title: 'Voice actors and studios',
+                      body: 'Follow a voice actor or a studio and pull up everything they touched.',
+                    },
+                    {
+                      icon: DeviceMobileIcon,
+                      title: 'Install on your phone',
+                      body: 'Add it to your home screen. It runs like an app, no store.',
+                    },
+                  ].map(({ icon: Glyph, title, body }) => (
+                    <li key={title} className="flex gap-4">
+                      <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line/50 bg-surface/60 text-accent">
+                        <Glyph className="h-5 w-5" aria-hidden />
+                      </span>
+                      <div>
+                        <p className="font-semibold text-fg">{title}</p>
+                        <p className="mt-0.5 text-sm leading-relaxed text-muted">
+                          {body}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="lg:w-1/2">
+                <PosterFan items={featured.length > 0 ? featured : trending} />
+              </div>
+            </div>
+          </Reveal>
         </section>
 
         {/* Live proof */}
@@ -545,8 +811,8 @@ const Splash = ({
                 Ready for the show?
               </h2>
               <p className="mx-auto mt-4 max-w-md text-muted">
-                Thousands of shows, zero hoops. Start with what&apos;s hot, or
-                dig up the one you never finished.
+                Thousands of shows, zero hoops. Sync your list, skip the intro,
+                and bring someone to talk to. The stage is set.
               </p>
               <div className="mt-8 flex flex-wrap justify-center gap-3">
                 <Link href="/home" passHref>
