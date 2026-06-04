@@ -2,7 +2,9 @@ import { useEffect, useRef } from 'react';
 
 import { getSession, subscribeAuth } from '@utility/anilistAuth';
 import {
+  initLocalBaseline,
   isApplyingRemote,
+  noteLocalChange,
   pullAndMerge,
   pushChanges,
 } from '@utility/anilistSync';
@@ -31,14 +33,23 @@ const useAniListSync = (): void => {
       }
       if (pulledFor.current !== s.user.id) {
         pulledFor.current = s.user.id;
-        pullAndMerge(s).catch(() => {
-          /* best-effort */
-        });
+        // After importing, flush any local changes left un-pushed from a prior
+        // session (tombstones / dirty statuses persisted across the refresh).
+        pullAndMerge(s)
+          .then(() => pushChanges(s))
+          .catch(() => {
+            /* best-effort */
+          });
       }
     };
 
     const onLocalChange = () => {
-      if (!getSession() || isApplyingRemote()) return;
+      if (!getSession()) return;
+      // Record the user's edit synchronously (persisted) so it survives a
+      // refresh even if the network push below never fires. Skipped internally
+      // while a remote pull is applying its own writes.
+      noteLocalChange();
+      if (isApplyingRemote()) return;
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         const s = getSession();
@@ -50,6 +61,7 @@ const useAniListSync = (): void => {
       }, PUSH_DEBOUNCE_MS);
     };
 
+    initLocalBaseline();
     maybePull();
     const unsubAuth = subscribeAuth(maybePull);
     const unsubProgress = subscribeProgress(onLocalChange);

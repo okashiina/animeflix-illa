@@ -360,6 +360,17 @@ renders, 0 console errors) done — the fullscreen companion dock still wants a 
   low-spoiler cast roster seeded for sharper, less generic, still spoiler-safe takes. A
   `scripts/companion-eval` harness scores spoiler-safety / grounding / tone / specificity /
   coherence for iterating the prompt.
+- **Watchlist reliability fixes (2026-06-04, branch `fix/watchlist-status`)** — three friend-test
+  bugs: (a) the poster card's bookmark couldn't be clicked (the decorative play overlay covered it,
+  so the tap navigated to the title instead); (b) "Plan to Watch" didn't stick; (c) removed titles
+  came back after a refresh. (b)+(c) shared a root cause: the AniList pull re-applied remote state
+  over newer local intent, and its delete/baseline state was in-memory (lost on refresh), so it
+  only deleted progress-less entries. Fix: a **persisted intent layer** (`kessoku.anilist.sync.v1`)
+  — tombstones (locally-removed titles are force-deleted on AniList and never resurrected by a
+  pull) + dirty-status flags (a local status change wins over the remote one until it is pushed),
+  both cleared **only on a confirmed AniList write**; a failed pull or push is a no-op that retries
+  on the next sync. `pointer-events-none` on the card play overlay fixes the click-through. tsc +
+  eslint clean; the card fix is browser-verified, the AniList round-trip needs a logged-in check.
 
 ## 9. Local host runbook (laptop) + VPS migration off-ramp
 
