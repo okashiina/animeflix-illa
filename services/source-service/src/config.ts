@@ -16,6 +16,11 @@ export const config = {
   breakerThreshold: num(process.env.BREAKER_THRESHOLD, 4),
   breakerCooldownMs: num(process.env.BREAKER_COOLDOWN_MS, 2 * 60 * 1000),
   corsOrigins: (process.env.CORS_ORIGINS || '*').split(',').map((s) => s.trim()),
+  // Public origin (scheme+host) used to build /hls, /file, /subs links. Behind a
+  // TLS-terminating tunnel (Cloudflare / Tailscale Funnel) req.protocol is plain
+  // http, which would emit mixed-content http:// links on an https frontend and
+  // get the player blocked. Set this to the public https origin to force it.
+  publicBaseUrl: (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
   openSubtitlesApiKey: process.env.OPENSUBTITLES_API_KEY || '',
   // External subtitle sources (Phase 3). See docs/SUBTITLE-SOURCING-RESEARCH.md.
   subdlApiKey: process.env.SUBDL_API_KEY || '', // Indonesian (id)

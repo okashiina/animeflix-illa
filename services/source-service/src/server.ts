@@ -57,7 +57,15 @@ app.get('/watch', async (req) => {
   if (!result) return { mode: 'embed' };
 
   // Rewrite each source through our HLS proxy so the browser can play it.
-  const base = `${req.protocol}://${req.headers.host}`;
+  // Behind a TLS-terminating tunnel req.protocol is http; prefer an explicit
+  // PUBLIC_BASE_URL, then X-Forwarded-Proto, so links stay https and the browser
+  // doesn't block them as mixed content.
+  const xfProto = req.headers['x-forwarded-proto'];
+  const proto =
+    typeof xfProto === 'string' && xfProto
+      ? xfProto.split(',')[0].trim()
+      : req.protocol;
+  const base = config.publicBaseUrl || `${proto}://${req.headers.host}`;
   const sources = result.sources.map((s) => {
     const ref = s.headers?.Referer || result.headers?.Referer || '';
     let proxied: string;
