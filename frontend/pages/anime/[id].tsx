@@ -1,8 +1,11 @@
 import { GetServerSideProps, InferGetServerSidePropsType } from 'next';
+import Image from 'next/image';
+import Link from 'next/link';
 
 import { animePage, getKitsuEpisodes } from '@animeflix/api';
 import {
   AnimeBannerFragment,
+  AnimeCastFragment,
   AnimeInfoFragment,
   MediaStatus,
   MediaType,
@@ -22,7 +25,7 @@ import StatusSelect from '@components/anime/StatusSelect';
 import Header from '@components/Header';
 
 interface AnimeProps {
-  anime: AnimeInfoFragment & AnimeBannerFragment;
+  anime: AnimeInfoFragment & AnimeBannerFragment & AnimeCastFragment;
   recommended: AnimeInfoFragment[];
   related: RelationItem[];
   episodes: EpisodesListFragment;
@@ -175,6 +178,148 @@ const ComingSoon: React.FC<{ label: string | null }> = ({ label }) => (
   </div>
 );
 
+// Studio chips under the key art. Main studios (the ones who actually animated
+// the show) lead; we keep a couple of others so the credit reads honestly.
+const StudioRow: React.FC<{
+  studios: AnimeCastFragment['studios'];
+}> = ({ studios }) => {
+  const edges = (studios?.edges ?? []).filter((e): e is NonNullable<typeof e> =>
+    Boolean(e && e.node)
+  );
+
+  if (edges.length === 0) return null;
+
+  // Main animators first, then the rest, capped so the row stays a credit not a
+  // wall. De-dupe by id in case AniList lists a studio twice.
+  const seen = new Set<number>();
+  const ordered = edges
+    .slice()
+    .sort((a, b) => Number(b.isMain) - Number(a.isMain))
+    .filter((e) => {
+      const { node } = e;
+      if (!node || seen.has(node.id)) return false;
+      seen.add(node.id);
+      return true;
+    })
+    .slice(0, 5);
+
+  return (
+    <section className="mt-10 px-4 sm:px-6 lg:px-8">
+      <div className="mb-3 flex items-center gap-2.5">
+        <span className="h-5 w-1 rounded-full bg-aurora" aria-hidden />
+        <h2 className="font-display text-xl font-bold tracking-tight text-fg sm:text-2xl">
+          Studio
+        </h2>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {ordered.map((edge) => (
+          <Link key={edge.node.id} href={`/studio/${edge.node.id}`} passHref>
+            <a className="group inline-flex items-center gap-2 rounded-full border border-line/60 bg-surface px-3.5 py-1.5 text-sm font-medium text-muted transition duration-200 hover:border-accent/60 hover:bg-surface-2 hover:text-fg">
+              <span className="font-display text-fg group-hover:text-accent">
+                {edge.node.name}
+              </span>
+              {edge.isMain && (
+                <span className="rounded-full bg-aurora px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent-ink">
+                  Main
+                </span>
+              )}
+            </a>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+};
+
+// Cast rail: character on the left, the title's Japanese VA on the right.
+// Tapping the VA opens their page so you can chase the rest of their roles.
+const CastSection: React.FC<{
+  characters: AnimeCastFragment['characters'];
+}> = ({ characters }) => {
+  const edges = (characters?.edges ?? [])
+    .filter((e): e is NonNullable<typeof e> => Boolean(e && e.node))
+    .slice(0, 12);
+
+  if (edges.length === 0) return null;
+
+  return (
+    <section className="mt-10 px-4 sm:px-6 lg:px-8">
+      <div className="mb-3 flex items-center gap-2.5">
+        <span className="h-5 w-1 rounded-full bg-aurora" aria-hidden />
+        <h2 className="font-display text-xl font-bold tracking-tight text-fg sm:text-2xl">
+          Cast
+        </h2>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {edges.map((edge) => {
+          const character = edge.node;
+          const va = (edge.voiceActors ?? []).find((v) => v && v.id) ?? null;
+          const role = edge.role
+            ? edge.role.charAt(0) + edge.role.slice(1).toLowerCase()
+            : null;
+
+          return (
+            <div
+              key={character.id}
+              className="flex items-stretch justify-between gap-3 rounded-2xl border border-line/60 bg-surface p-2.5"
+            >
+              {/* Character side */}
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full bg-surface-2 ring-1 ring-line/40">
+                  {character.image?.medium && (
+                    <Image
+                      alt={character.name?.full ?? 'Character'}
+                      src={character.image.medium}
+                      layout="fill"
+                      objectFit="cover"
+                    />
+                  )}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-fg">
+                    {character.name?.full ?? 'Unknown'}
+                  </p>
+                  {role && <p className="text-xs text-faint">{role}</p>}
+                </div>
+              </div>
+
+              {/* Voice actor side (Japanese) */}
+              {va ? (
+                <Link href={`/staff/${va.id}`} passHref>
+                  <a className="group flex min-w-0 items-center gap-3 text-right">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-muted transition group-hover:text-accent">
+                        {va.name?.full ?? 'Voice actor'}
+                      </p>
+                      <p className="text-xs text-faint">Japanese</p>
+                    </div>
+                    <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full bg-surface-2 ring-1 ring-line/40 transition group-hover:ring-accent/50">
+                      {va.image?.medium && (
+                        <Image
+                          alt={va.name?.full ?? 'Voice actor'}
+                          src={va.image.medium}
+                          layout="fill"
+                          objectFit="cover"
+                        />
+                      )}
+                    </span>
+                  </a>
+                </Link>
+              ) : (
+                <div className="flex items-center pr-1 text-xs text-faint">
+                  No VA listed
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+};
+
 const Anime = ({
   anime,
   recommended,
@@ -237,6 +382,10 @@ const Anime = ({
           ))}
 
         <RelatedSection items={related} />
+
+        <StudioRow studios={anime.studios} />
+
+        <CastSection characters={anime.characters} />
 
         {recommended.length > 0 ? (
           <Section animeList={recommended} title="Recommended" />
