@@ -1,0 +1,117 @@
+{
+  "endpoint": "http://localhost:3000/api/companion",
+  "note": "Scripted multi-turn conversations for the watch companion. The anime + cast + subtitle window are FAKE on purpose: a real model has no memory of these titles, so a leak past the supplied window is a clear spoiler failure we can catch. Each conversation pins a tone and a 'window' (the subtitle lines aired up to the viewer's current moment).",
+  "conversations": [
+    {
+      "id": "lighthouse-hype-ep1",
+      "tone": "hype",
+      "mature": false,
+      "seed": {
+        "title": "The Lighthouse Keeper's Daughter",
+        "synopsis": "Mika moves to a windswept island to live with the grandfather she has never met, the keeper of an old lighthouse. As she learns the rhythm of the light she starts to hear a voice in the fog, and slowly uncovers what the island has been keeping quiet for forty years.",
+        "genres": ["Slice of Life", "Mystery", "Drama"],
+        "format": "TV",
+        "roster": [
+          { "name": "Mika Arao", "role": "main", "va": "Hanae Natsuki" },
+          { "name": "Grandpa Joro", "role": "main", "va": "Otsuka Akio" },
+          { "name": "The Fog Voice", "role": "supporting", "va": "Hayami Saori" }
+        ]
+      },
+      "episode": 1,
+      "total": 12,
+      "window": [
+        "Mika: The ferry only comes twice a week?",
+        "Grandpa Joro: Twice if the sea is kind. Once if it is not.",
+        "Mika: This whole island is just... us and the light.",
+        "Grandpa Joro: The light, and whatever the light is for.",
+        "Mika: ...Did you hear that? In the fog.",
+        "Grandpa Joro: Heard nothing. Go to bed, Mika."
+      ],
+      "turns": [
+        "okay the vibe here is unreal, what just happened with the fog??",
+        "wait who even is the grandpa, remind me his name",
+        "be honest — does Mika find out what the voice is?"
+      ]
+    },
+    {
+      "id": "lighthouse-analytical-ep1",
+      "tone": "analytical",
+      "mature": false,
+      "seed": {
+        "title": "The Lighthouse Keeper's Daughter",
+        "synopsis": "Mika moves to a windswept island to live with the grandfather she has never met, the keeper of an old lighthouse. As she learns the rhythm of the light she starts to hear a voice in the fog, and slowly uncovers what the island has been keeping quiet for forty years.",
+        "genres": ["Slice of Life", "Mystery", "Drama"],
+        "format": "TV",
+        "roster": [
+          { "name": "Mika Arao", "role": "main", "va": "Hanae Natsuki" },
+          { "name": "Grandpa Joro", "role": "main", "va": "Otsuka Akio" }
+        ]
+      },
+      "episode": 1,
+      "total": 12,
+      "window": [
+        "Mika: The ferry only comes twice a week?",
+        "Grandpa Joro: Twice if the sea is kind. Once if it is not.",
+        "Grandpa Joro: The light, and whatever the light is for."
+      ],
+      "turns": [
+        "that line about the light 'and whatever the light is for' felt loaded. read it for me",
+        "what do you make of how distant the grandpa is so far?"
+      ]
+    },
+    {
+      "id": "neon-melancholic-ep4",
+      "tone": "melancholic",
+      "mature": false,
+      "seed": {
+        "title": "Neon Tide",
+        "synopsis": "Two rival arcade champions in a rain-soaked port city keep meeting after closing time. As the old arcade faces demolition they play one last bracket, and learn why neither of them ever wanted to go home.",
+        "genres": ["Drama", "Romance", "Sports"],
+        "format": "TV",
+        "roster": [
+          { "name": "Rei Sasaki", "role": "main", "va": "Hidaka Rina" },
+          { "name": "Kaito Mori", "role": "main", "va": "Saito Soma" },
+          { "name": "Manager Bo", "role": "supporting", "va": "Sugita Tomokazu" }
+        ]
+      },
+      "episode": 4,
+      "total": 11,
+      "window": [
+        "Kaito: They're tearing the place down in spring.",
+        "Rei: ...You could've told me before the last bracket started.",
+        "Kaito: I didn't want you to play sad.",
+        "Rei: I always play sad. You just never looked."
+      ],
+      "turns": [
+        "that last line gutted me a little",
+        "do they end up together by the end? i need to know",
+        "what's the manager's name again, the one who runs the arcade"
+      ]
+    },
+    {
+      "id": "neon-adaptive-bilingual-ep4",
+      "tone": "adaptive",
+      "mature": false,
+      "seed": {
+        "title": "Neon Tide",
+        "synopsis": "Two rival arcade champions in a rain-soaked port city keep meeting after closing time.",
+        "genres": ["Drama", "Romance", "Sports"],
+        "format": "TV",
+        "roster": [
+          { "name": "Rei Sasaki", "role": "main", "va": "Hidaka Rina" },
+          { "name": "Kaito Mori", "role": "main", "va": "Saito Soma" }
+        ]
+      },
+      "episode": 4,
+      "total": 11,
+      "window": [
+        "Kaito: They're tearing the place down in spring.",
+        "Rei: You just never looked."
+      ],
+      "turns": [
+        "anjir adegan ini sedih banget sumpah",
+        "menurut lo si Kaito beneran suka sama Rei ga?"
+      ]
+    }
+  ]
+}

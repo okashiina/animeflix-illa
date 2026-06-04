@@ -26,10 +26,12 @@ const BASE_VOICE = `You are kessoku's watch companion: the friend in the next se
 
 Voice: warm, a little shy but quick to light up at a good cut or a good line. Light band-and-stage energy, never forced. Keep replies short, like texting while watching, a sentence or three. Speak the viewer's language: if they write Indonesian, answer in Indonesian; if English, English; mirror whatever mix they use. No emoji spam, no lecturing, no walls of text.
 
+Be specific, not generic. React to the actual moment in front of you: name the character who just spoke, the line that landed, the shot or the beat the viewer is reacting to. Skip empty filler like "that was so cool" or "great episode" with nothing behind it; give a real, concrete take grounded in what just played.
+
 Hard rules:
-- You only know what has aired up to this point: the synopsis and the subtitle lines marked as already shown. Treat everything past that as unknown to you.
+- You know this show ONLY up to the viewer's current episode and current moment: the synopsis, the cast you have been told about, and the subtitle lines marked as already shown. Treat everything past that as unknown to you, even later episodes you might know from elsewhere.
 - Never reveal, hint at, or foreshadow anything that has not happened yet on screen, even if you could guess it from genre or synopsis. If they ask what happens next, dodge it like a friend who refuses to spoil: tease, change the subject, tell them to keep watching.
-- Stay about this anime and this moment. Do not invent plot the show has not shown.`;
+- Stay about this anime and this moment. Do not invent plot, lines, or character details the show has not shown. If you are not sure, say you are not sure rather than make something up.`;
 
 const TONE_PROMPTS: Record<string, string> = {
   adaptive:
@@ -53,6 +55,11 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
 }
+interface RosterEntry {
+  name?: string;
+  role?: string;
+  va?: string;
+}
 interface CompanionBody {
   seed?: Seed;
   tone?: string;
@@ -60,6 +67,7 @@ interface CompanionBody {
   episode?: number;
   total?: number;
   window?: string[];
+  roster?: RosterEntry[];
   messages?: ChatMessage[];
   message?: string;
 }
@@ -74,7 +82,13 @@ const buildSystem = (body: CompanionBody): string => {
   const epTotal = body.total ? ` of ${body.total}` : '';
   const ep = body.episode ? `, episode ${body.episode}${epTotal}` : '';
 
-  const parts: string[] = [BASE_VOICE, `SHOW: ${title}${format}${ep}.`];
+  const knownUpTo = body.episode
+    ? ` You know ${title} only up to episode ${body.episode}; anything later has not happened for the viewer yet.`
+    : '';
+  const parts: string[] = [
+    BASE_VOICE,
+    `SHOW: ${title}${format}${ep}.${knownUpTo}`,
+  ];
 
   if (seed.synopsis) {
     parts.push(
@@ -85,6 +99,25 @@ const buildSystem = (body: CompanionBody): string => {
     );
   }
   if (seed.genres?.length) parts.push(`GENRES: ${seed.genres.join(', ')}.`);
+
+  // Cast roster: names + role + JP voice actor only, no bios. Helps the
+  // companion get names right and answer "who was that?" without inventing
+  // anything. Capped so a stuffed roster can't blow up the prompt.
+  const roster = (body.roster || [])
+    .filter((r) => r && typeof r.name === 'string' && r.name.trim())
+    .slice(0, 12)
+    .map((r) => {
+      const role = r.role ? ` (${clip(r.role, 24)})` : '';
+      const va = r.va ? `, VA: ${clip(r.va, 60)}` : '';
+      return `${clip(r.name!.trim(), 60)}${role}${va}`;
+    });
+  if (roster.length) {
+    parts.push(
+      `CAST you may know up to this point (names, role, and Japanese voice actor only, no story details; do not assume anything about their arcs beyond what has aired):\n${roster.join(
+        '\n'
+      )}`
+    );
+  }
 
   const window = (body.window || [])
     .map((l) => l.trim())

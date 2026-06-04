@@ -139,6 +139,38 @@ const Watch = ({
     'recommended'
   );
 
+  // Low-spoiler cast roster for the companion: names + role + JP voice actor
+  // only, NO bios or arcs, capped to the top ~10. This lets it answer "who was
+  // that again?" without inventing anything or leaking later-arc spoilers. The
+  // watchPage query returns AnimeCast (`anime.characters`), but the page prop
+  // type is AnimeInfo & AnimeBanner, so read it through a narrow local cast.
+  const cast = (
+    anime as unknown as {
+      characters?: {
+        edges?:
+          | ({
+              role?: string | null;
+              node?: { name?: { full?: string | null } | null } | null;
+              voiceActors?:
+                | ({ name?: { full?: string | null } | null } | null)[]
+                | null;
+            } | null)[]
+          | null;
+      } | null;
+    }
+  ).characters;
+
+  const roster = (cast?.edges ?? [])
+    .map((edge) => {
+      const name = edge?.node?.name?.full;
+      if (!name) return null;
+      const va = edge?.voiceActors?.[0]?.name?.full || undefined;
+      const role = edge?.role ? edge.role.toLowerCase() : undefined;
+      return { name, role, va };
+    })
+    .filter((r): r is NonNullable<typeof r> => Boolean(r))
+    .slice(0, 10);
+
   // Seed the companion with what it is allowed to know about the show up front.
   // The synopsis is HTML-stripped here; the per-moment subtitle window is pulled
   // live from the player at send time (see CompanionChat / companionContext).
@@ -150,6 +182,7 @@ const Watch = ({
       .trim(),
     genres: anime.genres ?? [],
     format: anime.format || '',
+    roster,
   };
 
   return (
@@ -193,6 +226,16 @@ const Watch = ({
                 episode < totalEpisodes
                   ? () => dispatch(setEpisode(episode + 1))
                   : undefined
+              }
+              // Fullscreen-dock companion. Same animeId + episode as the
+              // right-rail instance, so both share the one persisted thread.
+              companionSlot={
+                <CompanionChat
+                  seed={companionSeed}
+                  animeId={animeId}
+                  episode={episode}
+                  total={totalEpisodes}
+                />
               }
             />
 
@@ -292,6 +335,7 @@ const Watch = ({
             ) : (
               <CompanionChat
                 seed={companionSeed}
+                animeId={animeId}
                 episode={episode}
                 total={totalEpisodes}
               />

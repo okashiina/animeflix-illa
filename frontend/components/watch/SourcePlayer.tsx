@@ -44,7 +44,9 @@ const SourcePlayer: React.FC<{
   titles: string[];
   malId?: number | null;
   onNext?: () => void;
-}> = ({ titles, malId, onNext }) => {
+  // The AI watch companion, forwarded to HlsPlayer for the fullscreen dock.
+  companionSlot?: React.ReactNode;
+}> = ({ titles, malId, onNext, companionSlot }) => {
   const animeId = useSelector((store) => store.anime.anime);
   const episode = useSelector((store) => store.episode.episode);
   const useDub = useSelector((store) => store.videoSettings.useDub);
@@ -256,6 +258,7 @@ const SourcePlayer: React.FC<{
         episode={episode}
         total={totalEpisodes}
         skipMarkers={skipMarkers}
+        companionSlot={companionSlot}
       />
       {serverPicker}
     </div>
