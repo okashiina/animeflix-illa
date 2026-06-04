@@ -31,6 +31,14 @@ COPY . .
 # Uncomment the following line in case you want to disable telemetry during the build.
 ENV NEXT_TELEMETRY_DISABLED 1
 
+# NEXT_PUBLIC_* are inlined into the client bundle at build time, so the URL must
+# exist during `yarn build` (next build), not just at runtime. Railway passes
+# service variables as build args; declare the ARG and promote it to ENV so the
+# custom player gets the source-service URL baked in. Without this it is undefined
+# and the "Try our server" path silently falls back to the embed switcher.
+ARG NEXT_PUBLIC_SOURCE_SERVICE_URL
+ENV NEXT_PUBLIC_SOURCE_SERVICE_URL=$NEXT_PUBLIC_SOURCE_SERVICE_URL
+
 # build the image
 RUN yarn build
 
