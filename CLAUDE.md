@@ -28,10 +28,17 @@ Invoke these skills (Skill tool) before/while doing the matching work — not op
   before saying something works. When you genuinely can't verify (e.g. a third-party
   embed iframe playing in a real browser), say so explicitly — state what you did
   verify vs. what still needs the user's check. Don't imply it's confirmed.
+- **NEVER commit without explicit approval.** Build and edit freely, run the checks,
+  show what changed — then STOP and WAIT. Do not run `git commit` (or push / open a
+  PR / merge) until the user explicitly tells you to, not even for small or
+  "obviously done" changes. The user's word is the only trigger. No auto-commits.
 
-## 4. Branching & PR workflow (PPRM) — mandatory, shared repo
-This is now a **shared project with a collaborator**, so traceability matters. Do NOT
-commit straight to `main`. Every finished feature or fix follows **PPRM**:
+## 4. Branching & PR workflow (PPRM) — shared repo, USER-TRIGGERED
+This is a **shared project with a collaborator**, so traceability matters. Do NOT
+commit straight to `main`, and per §3 do NOT commit / push / PR / merge at all until
+the user explicitly says so. PPRM is a **manual gate**: build on a feature branch,
+then WAIT for the go-ahead. Once the user gives it, every finished feature or fix
+follows **PPRM**:
 
 1. **Branch** off up-to-date `main`: `git checkout main && git pull`, then
    `git checkout -b <type>/<slug>` (`feat/…`, `fix/…`, `docs/…`, `chore/…`).
