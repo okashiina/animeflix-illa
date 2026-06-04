@@ -82,6 +82,16 @@ pick **Server: AnimePahe** (or AllAnime) and the video plays through our player.
 
 ## Caveats (read these)
 
+- **You can't test it from this laptop's own browser.** Because the laptop is on the
+  tailnet, the funnel hostname resolves (via MagicDNS) to the private tailnet IP `100.x`,
+  and Chrome blocks a public web page (Railway) from fetching a private-network address
+  (Private Network Access) — the custom player silently falls back to embed and the
+  cross-origin fetch shows `net::ERR_FAILED`. This is a **self-test artifact only**. To
+  verify, use a device **not on your tailnet** (phone on mobile data), which resolves to
+  the public Funnel IP and works. A direct top-level visit to the funnel URL still works
+  from the laptop (only the cross-origin fetch is blocked). External users (your friend)
+  are unaffected. If you want laptop self-testing too, the source-service can send
+  `Access-Control-Allow-Private-Network: true`.
 - **The laptop must stay on** (awake, Docker running). If it sleeps/shuts down, the site
   falls back to embed (safe, but no custom player / progress tracking).
 - **It is your bandwidth.** Video bytes flow through your laptop's upload and Tailscale's
