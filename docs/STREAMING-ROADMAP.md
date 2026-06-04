@@ -522,6 +522,23 @@ localStorage (capped ~10, shared by the rail + fullscreen instances), a low-spoi
 `scripts/companion-eval` harness for iterating the prompt. Switched the default model to
 `gemini-2.5-flash` (the 2.0-flash free tier is zeroed for new keys).
 
+**Round-2.5 companion fixes shipped 2026-06-04 (branch `fix/companion-ux`):** chat turns now stamp
+the episode timestamp they were sent at ("at 12:34"); the fullscreen dock uses the full canvas
+height (was capped to ~half); and the **unhinged** tone got a forceful tone-override plus per-tone
+model routing — when the viewer opts in (18+), unhinged requests route to an optional uncensored
+OpenRouter model (`COMPANION_UNCENSORED_*` env), falling back to the default provider if that free
+pool 429s, so it always replies. Active default provider is now **Groq**
+(`llama-3.3-70b-versatile`, free + fast); Gemini stays a base+model env swap.
+
+**Future — "upscale the unhinged AI" (Option A, parked 2026-06-04).** The `:free` uncensored model
+(Dolphin Venice via OpenRouter) is a *shared* pool that rate-limits (429, `is_byok:false`), so today
+unhinged usually lands on the Groq fallback (edgy but safety-aligned, won't go fully explicit). When
+we want it genuinely uncensored and reliable, point `COMPANION_UNCENSORED_MODEL` at a cheap **paid**
+OpenRouter model + a one-time ~$5 top-up: `thedrummer/rocinante-12b` ($0.17/$0.43 per M tok,
+~$0.0005/chat) is the value pick, `thedrummer/cydonia-24b-v4.1` the bigger 24B, `sao10k/l3.3-euryale-70b`
+the premium 70B. Alt path: BYOK a Venice key under OpenRouter Integrations to keep the `:free` slug.
+Parked for now — the Groq fallback is "lumayan cukup."
+
 Why it earns the work: people who watch niche titles have nobody around to talk to about them. An
 always-there persona that can talk about *this* episode, in the Kessoku-Band voice, is real
 differentiation, not a checkbox.
