@@ -6,6 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 
+import { type SkipMarkers } from '@utility/aniskip';
 import { getEntry, markWatched, savePosition } from '@utility/progress';
 
 // Our own player chrome for the self-hosted (Option B) HLS stream. Native
@@ -39,6 +40,7 @@ interface HlsPlayerProps {
   animeId?: number; // for watch-progress persistence (Continue watching)
   episode?: number;
   total?: number; // total episodes for the title (drives "finished" tracking)
+  skipMarkers?: SkipMarkers; // AniSkip intro/outro times (drives Skip button)
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -72,6 +74,7 @@ interface Prefs {
   capBg: CapBg;
   subOffset: number; // subtitle delay in seconds (+ = subs later)
   capPos: { x: number; y: number } | null; // drag position (% of stage); null = default bottom-centre
+  autoNext: boolean; // auto-play the next episode at the end
 }
 
 const loadPrefs = (): Prefs => {
@@ -85,6 +88,7 @@ const loadPrefs = (): Prefs => {
     capBg: 'semi',
     subOffset: 0,
     capPos: null,
+    autoNext: true,
   };
   if (typeof window === 'undefined') return base;
   try {
@@ -310,6 +314,7 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   animeId,
   episode,
   total,
+  skipMarkers,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -332,6 +337,7 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   const [capBg, setCapBg] = useState<CapBg>(initial.current.capBg);
   const [subOffset, setSubOffset] = useState(initial.current.subOffset);
   const [capPos, setCapPos] = useState(initial.current.capPos);
+  const [autoNext, setAutoNext] = useState(initial.current.autoNext);
   const [capDragging, setCapDragging] = useState(false);
   const capDrag = useRef<{
     px: number;
@@ -353,6 +359,9 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   const [help, setHelp] = useState(false);
   const [subIdx, setSubIdx] = useState(-1);
   const [cueText, setCueText] = useState('');
+  // Auto-next: dismissed for THIS episode, and a guard so we only advance once.
+  const [autoNextDismissed, setAutoNextDismissed] = useState(false);
+  const autoFiredRef = useRef(false);
 
   // Persist preferences whenever they change.
   useEffect(() => {
@@ -367,12 +376,40 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
         capBg,
         subOffset,
         capPos,
+        autoNext,
       };
       window.localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
     } catch {
       /* ignore */
     }
-  }, [skip, rate, volume, muted, capSize, capColor, capBg, subOffset, capPos]);
+  }, [
+    skip,
+    rate,
+    volume,
+    muted,
+    capSize,
+    capColor,
+    capBg,
+    subOffset,
+    capPos,
+    autoNext,
+  ]);
+
+  // Auto-next: reset the per-episode guards whenever the episode changes.
+  useEffect(() => {
+    autoFiredRef.current = false;
+    setAutoNextDismissed(false);
+  }, [episode]);
+
+  // Auto-next: advance once, right at the end, when enabled and not dismissed.
+  useEffect(() => {
+    if (!onNext || !autoNext || autoNextDismissed || autoFiredRef.current)
+      return;
+    if (duration > 0 && duration - current <= 0.6) {
+      autoFiredRef.current = true;
+      onNext();
+    }
+  }, [current, duration, onNext, autoNext, autoNextDismissed]);
 
   // ---- hls.js wiring (codec shim + media-error recovery + embed fallback) ----
   useEffect(() => {
@@ -804,6 +841,36 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
     }
   };
 
+  // Which AniSkip marker (if any) covers the current playback time. Drives the
+  // "Skip Intro / Skip Outro" button; clicking jumps to the end of the segment.
+  const activeSkip = (() => {
+    if (!skipMarkers) return null;
+    const { op, ed } = skipMarkers;
+    if (op && current >= op.start && current < op.end - 0.25)
+      return { label: 'Skip Intro', end: op.end };
+    if (ed && current >= ed.start && current < ed.end - 0.25)
+      return { label: 'Skip Outro', end: ed.end };
+    return null;
+  })();
+
+  const skipTo = (t: number) => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = Math.min(Math.max(t, 0), v.duration || t);
+    setCurrent(v.currentTime);
+  };
+
+  // "Up next" countdown card — shows in the final seconds when auto-next is on
+  // and a next episode exists. The count is derived from playback time, so it
+  // naturally freezes if the viewer pauses.
+  const nextRemaining = duration > 0 ? duration - current : Infinity;
+  const showUpNext =
+    Boolean(onNext) &&
+    autoNext &&
+    !autoNextDismissed &&
+    nextRemaining <= 9 &&
+    nextRemaining > 0;
+
   const shortcuts: [string[], string][] = [
     [['Space', 'K'], 'Play / pause'],
     [['J', '←'], `Back ${skip}s`],
@@ -977,6 +1044,67 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
             </div>
           )}
 
+          {/* Skip intro / outro (AniSkip). Sits above the control scrim, lifts a
+              little when the chrome is visible so it never overlaps the bar. */}
+          {activeSkip && !help && !showUpNext && (
+            <button
+              type="button"
+              onClick={() => skipTo(activeSkip.end)}
+              className={`bg-canvas/85 absolute right-4 z-30 flex items-center gap-2 rounded-lg border border-line/60 px-4 py-2 text-sm font-semibold text-fg shadow-lift backdrop-blur transition hover:border-accent/60 hover:text-accent active:scale-95 sm:right-6 ${
+                chromeVisible ? 'bottom-24' : 'bottom-8'
+              }`}
+            >
+              {activeSkip.label}
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M5 5l7 7-7 7M13 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
+
+          {/* Up next — auto-play countdown in the final seconds. */}
+          {showUpNext && !help && (
+            <div
+              className={`absolute right-4 z-30 w-56 rounded-xl border border-line/60 bg-canvas/90 p-3 shadow-lift backdrop-blur sm:right-6 ${
+                chromeVisible ? 'bottom-24' : 'bottom-8'
+              }`}
+            >
+              <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-faint">
+                Up next
+              </p>
+              <p className="mt-0.5 truncate text-sm font-semibold text-fg">
+                Episode {(episode ?? 0) + 1}
+              </p>
+              <p className="mt-0.5 text-xs text-muted">
+                Playing in {Math.ceil(nextRemaining)}s
+              </p>
+              <div className="mt-2.5 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onNext?.()}
+                  className="flex-1 rounded-lg bg-aurora px-3 py-1.5 text-xs font-semibold text-accent-ink shadow-glow transition active:scale-95"
+                >
+                  Play now
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAutoNextDismissed(true)}
+                  className="rounded-lg border border-line/60 px-3 py-1.5 text-xs font-medium text-muted transition hover:text-fg"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Bottom scrim + controls */}
           <div
             className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-canvas/95 via-canvas/40 to-transparent pb-2 pt-10 transition-opacity duration-300 ${
@@ -1138,6 +1266,15 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
                           {SKIPS.map((sk) =>
                             menuChip(`${sk}s`, sk === skip, () => setSkip(sk))
                           )}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                          Autoplay next
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {menuChip('On', autoNext, () => setAutoNext(true))}
+                          {menuChip('Off', !autoNext, () => setAutoNext(false))}
                         </div>
                       </div>
                       {hasSubs ? (

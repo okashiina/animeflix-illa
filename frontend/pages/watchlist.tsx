@@ -4,19 +4,22 @@ import { getAnimeByIds } from '@animeflix/api';
 import { AnimeInfoFragment } from '@animeflix/api/aniList';
 import { NextSeo } from 'next-seo';
 
+import AniListSignInBanner from '@components/AniListSignInBanner';
 import Card from '@components/anime/Card';
 import Header from '@components/Header';
 import progressBar from '@components/Progress';
 import useWatchlist from '@hooks/useWatchlist';
-import { deriveStatus, LibStatus } from '@utility/watchlist';
+import { type AniStatus, effectiveStatus } from '@utility/listStatus';
 
-type Tab = 'all' | LibStatus;
+type Tab = 'all' | AniStatus;
 
 const TABS: { value: Tab; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'toWatch', label: 'To Watch' },
-  { value: 'watching', label: 'Watching' },
-  { value: 'completed', label: 'Completed' },
+  { value: 'CURRENT', label: 'Watching' },
+  { value: 'PLANNING', label: 'Plan to Watch' },
+  { value: 'COMPLETED', label: 'Completed' },
+  { value: 'PAUSED', label: 'On Hold' },
+  { value: 'DROPPED', label: 'Dropped' },
 ];
 
 const Watchlist = () => {
@@ -58,12 +61,13 @@ const Watchlist = () => {
     };
   }, [idKey]);
 
-  // Filter by the progress-derived library status; "all" shows everything.
+  // Filter by the effective list status (explicit override or derived from
+  // progress); "all" shows everything.
   const filtered = useMemo(
     () =>
       tab === 'all'
         ? media
-        : media.filter((anime) => deriveStatus(anime.id) === tab),
+        : media.filter((anime) => effectiveStatus(anime.id) === tab),
     [media, tab]
   );
 
@@ -81,6 +85,9 @@ const Watchlist = () => {
             My List
           </h1>
         </div>
+
+        {/* Signed-out nudge to sync with AniList (hides when logged in). */}
+        <AniListSignInBanner />
 
         {/* Status tabs */}
         <div className="mb-8 flex flex-wrap gap-2">

@@ -1,0 +1,27 @@
+# Two-way sync writes. SaveMediaListEntry upserts (creates if absent), so it
+# covers both "add to list" and "update progress/status". Requires an
+# Authorization: Bearer <token> header (passed per-request from the client).
+mutation saveMediaListEntry(
+  $mediaId: Int
+  $status: MediaListStatus
+  $progress: Int
+) {
+  SaveMediaListEntry(
+    mediaId: $mediaId
+    status: $status
+    progress: $progress
+  ) {
+    id
+    mediaId
+    status
+    progress
+    updatedAt
+  }
+}
+
+# Removes a list entry by its MediaList entry id (NOT the media id).
+mutation deleteMediaListEntry($id: Int) {
+  DeleteMediaListEntry(id: $id) {
+    deleted
+  }
+}

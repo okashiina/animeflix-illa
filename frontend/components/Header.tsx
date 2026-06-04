@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 
-import { SearchIcon } from '@heroicons/react/outline';
+import AniListAuthButton from '@components/AniListAuthButton';
+import SearchAutosuggest from '@components/SearchAutosuggest';
 
 const NAV_LINKS = [
   { label: 'Home', href: '/home' },
@@ -22,14 +23,6 @@ const Header: React.FC<{}> = () => {
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
-
-  const handleKeyPress: React.KeyboardEventHandler<HTMLInputElement> = (
-    event
-  ) => {
-    const keyword = event.currentTarget.value.trim();
-    if (event.key === 'Enter' && keyword)
-      router.push(`/search?keyword=${encodeURIComponent(keyword)}`);
-  };
 
   return (
     <header
@@ -73,16 +66,8 @@ const Header: React.FC<{}> = () => {
           ))}
         </nav>
 
-        <div className="ml-auto flex w-full max-w-xs items-center gap-2 rounded-full border border-line/70 bg-surface/70 px-3.5 py-2 text-muted backdrop-blur-sm transition duration-200 focus-within:border-accent/70 focus-within:bg-surface-2 focus-within:text-fg sm:max-w-sm">
-          <SearchIcon className="h-4 w-4 shrink-0" aria-hidden />
-          <input
-            type="search"
-            className="w-full bg-transparent text-sm text-fg placeholder-faint outline-none"
-            placeholder="Search anime..."
-            onKeyPress={handleKeyPress}
-            aria-label="Search anime"
-          />
-        </div>
+        <SearchAutosuggest />
+        <AniListAuthButton />
       </div>
     </header>
   );

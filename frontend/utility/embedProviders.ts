@@ -76,3 +76,46 @@ export const defaultProviderId = embedProviders[0].id;
 
 export const getProvider = (id: string): EmbedProvider =>
   embedProviders.find((provider) => provider.id === id) || embedProviders[0];
+
+// ---------------------------------------------------------------------------
+// Per-title memory of the embed server that last loaded for a given AniList id,
+// so a returning viewer defaults straight to a server known to carry that title.
+// Best-effort only: the iframe is cross-origin, so "loaded" means the provider
+// page rendered — not a guarantee the exact episode resolved.
+// ---------------------------------------------------------------------------
+
+const BY_TITLE_KEY = 'kessoku.embed.byTitle';
+
+type ByTitle = Record<number, string>;
+
+const readByTitle = (): ByTitle => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(BY_TITLE_KEY);
+    return raw ? (JSON.parse(raw) as ByTitle) : {};
+  } catch {
+    return {};
+  }
+};
+
+export const rememberProvider = (
+  anilistId: number,
+  providerId: string
+): void => {
+  if (typeof window === 'undefined' || !anilistId) return;
+  try {
+    const map = readByTitle();
+    if (map[anilistId] === providerId) return;
+    map[anilistId] = providerId;
+    window.localStorage.setItem(BY_TITLE_KEY, JSON.stringify(map));
+  } catch {
+    /* ignore write failures (quota, blocked storage). */
+  }
+};
+
+export const rememberedProvider = (anilistId: number): string | null => {
+  if (!anilistId) return null;
+  const id = readByTitle()[anilistId];
+  // Validate against the live list so a stale/removed id falls back.
+  return id && getProvider(id).id === id ? id : null;
+};

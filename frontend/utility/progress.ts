@@ -166,6 +166,39 @@ export function getResumeEpisode(id: number): number {
   return store.get()[id]?.ep || 1;
 }
 
+/** Every id that has a progress entry (for AniList sync diffing). */
+export function listProgressIds(): number[] {
+  ensureMigrated();
+  return Object.keys(store.get()).map(Number);
+}
+
+/**
+ * Merge a remote "episodes completed" count (AniList progress) into the local
+ * entry: marks 1..n watched (union with existing) and lifts `ep` to at least n.
+ * Used one-way when pulling an AniList list. Keeps local sec/dur resume.
+ */
+export function mergeWatchedUpTo(id: number, n: number, total?: number): void {
+  if (n <= 0) return;
+  ensureMigrated();
+  store.update((prev) => {
+    const cur = prev[id];
+    const set = new Set(cur?.watched ?? []);
+    for (let e = 1; e <= n; e += 1) set.add(e);
+    const watched = Array.from(set).sort((a, b) => a - b);
+    return {
+      ...prev,
+      [id]: {
+        ep: Math.max(cur?.ep ?? 0, n) || 1,
+        sec: cur?.sec ?? 0,
+        dur: cur?.dur ?? 0,
+        total: total || cur?.total || 0,
+        watched,
+        updatedAt: cur?.updatedAt ?? Date.now(),
+      },
+    };
+  });
+}
+
 // Memoized against the store's snapshot reference so useSyncExternalStore stays stable.
 let lastMap: ProgressMap | undefined;
 let lastList: ContinueItem[] = [];

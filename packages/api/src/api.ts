@@ -32,6 +32,12 @@ export const {
   searchGenre,
   watchPage,
   getAnimeByIds,
+  // AniList account sync (require an Authorization: Bearer <token> header,
+  // passed per-request as the 2nd arg of each SDK function).
+  viewer,
+  userMediaList,
+  saveMediaListEntry,
+  deleteMediaListEntry,
 } = aniSdk(aniListClient);
 
 // kitsu middleware to ignore error fields

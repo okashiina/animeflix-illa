@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { useSelector } from '@store/store';
+import { fetchSkipMarkers, type SkipMarkers } from '@utility/aniskip';
 
 import EmbedPlayer from './EmbedPlayer';
 import HlsPlayer, { type Subtitle } from './HlsPlayer';
@@ -39,10 +40,11 @@ const Frame: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   </div>
 );
 
-const SourcePlayer: React.FC<{ titles: string[]; onNext?: () => void }> = ({
-  titles,
-  onNext,
-}) => {
+const SourcePlayer: React.FC<{
+  titles: string[];
+  malId?: number | null;
+  onNext?: () => void;
+}> = ({ titles, malId, onNext }) => {
   const animeId = useSelector((store) => store.anime.anime);
   const episode = useSelector((store) => store.episode.episode);
   const useDub = useSelector((store) => store.videoSettings.useDub);
@@ -60,6 +62,8 @@ const SourcePlayer: React.FC<{ titles: string[]; onNext?: () => void }> = ({
   const [decodeFailed, setDecodeFailed] = useState(false);
   // Which direct provider to resolve with: 'auto' = fallback chain, else forced.
   const [pref, setPref] = useState<string>('auto');
+  // Intro/outro skip markers (AniSkip), fetched per MAL id + episode.
+  const [skipMarkers, setSkipMarkers] = useState<SkipMarkers>({});
 
   // Stable key for the titles array (a fresh array every render would loop).
   const titlesKey = titles.join(',');
@@ -128,6 +132,15 @@ const SourcePlayer: React.FC<{ titles: string[]; onNext?: () => void }> = ({
 
   // Re-resolve whenever the episode / dub / server choice changes.
   useEffect(() => resolve(), [resolve]);
+
+  // Fetch skip markers for the current episode (no-op without a MAL id).
+  useEffect(() => {
+    setSkipMarkers({});
+    if (!malId) return undefined;
+    const controller = new AbortController();
+    fetchSkipMarkers(malId, episode, controller.signal).then(setSkipMarkers);
+    return () => controller.abort();
+  }, [malId, episode]);
 
   const hasOurPlayer = sources.length > 0;
 
@@ -242,6 +255,7 @@ const SourcePlayer: React.FC<{ titles: string[]; onNext?: () => void }> = ({
         animeId={animeId}
         episode={episode}
         total={totalEpisodes}
+        skipMarkers={skipMarkers}
       />
       {serverPicker}
     </div>

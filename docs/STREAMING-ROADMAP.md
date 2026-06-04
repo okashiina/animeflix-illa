@@ -255,14 +255,27 @@ English underneath) is a soft-sub video source = HiAnime, which is VPS-gated.
    `/watchlist` page (status tabs), a home rail, a header nav link. **Only the direct
    player records progress** (embed iframe is cross-origin), so Continue Watching is
    sparse on the embed-only Railway deploy; watchlist + mark-watched work everywhere.
-2. **Hotkey `n` → next episode** (folded into the player keyboard now).
-3. **Skip-intro** — needs intro/outro markers (aniskip API, keyed by MAL id).
+2. **Hotkey `n` → next episode** (folded into the player keyboard now). **Auto-next
+   — BUILT (2026-06-04, code-complete, tsc+eslint clean; in-browser test pending):**
+   an "Up next" countdown card appears in the final seconds and auto-advances when a
+   next episode exists; an "Autoplay next" toggle in the player settings menu
+   (persisted) gates it. Direct player only.
+3. **Skip-intro/outro — BUILT (2026-06-04, code-complete; in-browser test pending).**
+   AniSkip API (`frontend/utility/aniskip.ts`), keyed by `idMal` + episode (`idMal`
+   added to the `AnimeInfo` fragment). `SourcePlayer` fetches markers → `HlsPlayer`
+   shows a "Skip Intro / Skip Outro" button that seeks to the segment end. Tolerant of
+   404 (no markers → no button). Direct player only.
 4. **Indonesian subtitles — BUILT (2026-06-03).** subdl (Indonesian) + Jimaku
    (Japanese) external tracks resolved + converted to VTT in the source-service
    (`src/subtitles/*`, `/subs`), served to the already-subtitle-ready player.
    Verified live (Frieren/JJK). Coverage: good for current/popular anime, thin for
    old classics. Activate by rebuilding the source-service container. See Phase 3.
-5. **Dubbed via our player** — likely broken; investigate AnimePahe dub (`category=dub`).
+5. **Dubbed via our player — FIXED (2026-06-04, source-service rebuilt & healthy).**
+   Root cause: AnimePahe silently returned the `jpn` (sub) track when a title had no
+   `eng` track, so dub requests played sub audio. Now `providers/animepahe.ts` returns
+   **no source** when dub is requested without a real `eng` track, so the resolver
+   fails over to AllAnime (which is dub-aware at the API level via
+   `availableEpisodes.dub`). Live dub playthrough still needs a browser check.
 6. **/api-finder filler vs canon — DONE (2026-06-03).** `packages/api/src/filler.ts`
    scrapes animefillerlist.com → `getFillerEpisodes(title)`; a `/api/filler` route
    feeds the watch-page episode grid, which now shows colour bars (filler = amber,
@@ -291,6 +304,39 @@ English underneath) is a soft-sub video source = HiAnime, which is VPS-gated.
    HiAnime on a VPS; until then the resolver chain is single-provider by necessity.
 
 ---
+
+### 8a. Discovery & retention round (2026-06-04)
+
+Free, embed-compatible Tier-1 work (COMPETITIVE-ANALYSIS §4) that helps **all** public
+visitors, not just the direct player. All code-complete, tsc + eslint clean, in-browser
+test pending:
+
+- **Search autosuggest** — debounced AniList dropdown in the header
+  (`frontend/hooks/useSearchSuggest.ts` + `components/SearchAutosuggest.tsx`); Enter still
+  falls through to `/search`.
+- **Smarter embed auto-fallback** — `EmbedPlayer.tsx` now auto-advances through servers on
+  a stall (was manual-only) and remembers the working server per title
+  (`kessoku.embed.byTitle`); a manual pick still wins.
+- **AniList login + two-way sync** — **authorization code grant** (AniList does NOT support
+  the implicit grant → `unsupported_grant_type`; token ~1yr). The browser only sees the
+  `code`; a server route `pages/api/auth/anilist.ts` exchanges it for a token using the
+  client **secret** (server-only env, never bundled). `utility/anilistAuth.ts` (session
+  store) + `utility/anilistSync.ts` (pull-merge on login; **conservative** push — only
+  advances progress / creates entries / deletes empty bookmarks, never downgrades a status)
+  + `hooks/useAniListAuth.ts` / `useAniListSync.ts` + `pages/auth/callback.tsx` + a header
+  avatar/login button. GraphQL ops added to `packages/api`. **To go live:** register an app
+  at `anilist.co/settings/apps` (redirect `<origin>/auth/callback`) and set
+  `NEXT_PUBLIC_ANILIST_CLIENT_ID` (build-time, Dockerfile `ARG`) **and** `ANILIST_CLIENT_SECRET`
+  (runtime, server-only) on Railway. Two apps in use: prod id 42916, dev id 42918
+  (dev id+secret in `frontend/.env.local`). The button hides until the client id is set.
+  `browse` + `schedule` pages already existed. **Verified working from local (2026-06-04):
+  login connects, the AniList list pulls in, watching/bookmarking pushes back.**
+- **Explicit list status (2026-06-04, code-complete)** — `utility/listStatus.ts`
+  (`kessoku.liststatus.v1`) + `components/anime/StatusSelect.tsx` (Watching / Plan to Watch /
+  Completed / On Hold / Dropped + Remove) on the watch & detail pages, replacing the labeled
+  bookmark there; the `/watchlist` tabs now filter by effective status. Explicit status maps
+  1:1 onto AniList's MediaListStatus and pushes straight up; pull mirrors AniList's status
+  locally. Without an explicit pick the status is still derived from progress.
 
 ## 9. Local host runbook (laptop) + VPS migration off-ramp
 

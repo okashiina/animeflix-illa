@@ -164,10 +164,22 @@ export const animepahe: Provider = {
       const kwik = extractKwik(playHtml);
       if (!kwik.length) return null;
 
-      // AnimePahe audio: jpn = subbed (hard-subbed), eng = dubbed.
-      const wantAudio = params.category === 'dub' ? 'eng' : 'jpn';
-      const preferred = kwik.filter((k) => k.audio === wantAudio || k.audio === '?');
-      const ordered = (preferred.length ? preferred : kwik).sort(
+      // AnimePahe audio: jpn = subbed (hard-subbed), eng = dubbed. The
+      // data-audio attribute is reliable here, so for a dub request we require a
+      // real `eng` track. If there is none, return no source and let the resolver
+      // fail over to a dub-capable provider (AllAnime) — never silently serve the
+      // jpn (sub) track when dub was asked for.
+      const wantDub = params.category === 'dub';
+      const engTracks = kwik.filter((k) => k.audio === 'eng');
+      const unknownTracks = kwik.filter((k) => k.audio === '?');
+
+      if (wantDub && !engTracks.length) return null;
+
+      const jpnTracks = kwik.filter((k) => k.audio === 'jpn');
+      const pool = wantDub
+        ? engTracks.concat(unknownTracks)
+        : (jpnTracks.length ? jpnTracks.concat(unknownTracks) : kwik);
+      const ordered = pool.sort(
         (a, b) => (Number(b.res) || 0) - (Number(a.res) || 0)
       );
 

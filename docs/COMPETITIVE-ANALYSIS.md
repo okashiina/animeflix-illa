@@ -87,16 +87,21 @@ Split by what works **now on the embed pipeline (free, client-side)** vs. what n
 ### Tier 1 — do now, embed-compatible, zero hosting cost
 These are pure frontend + AniList GraphQL, high value, low risk:
 
-1. **AniList OAuth sync** — two-way watchlist + progress; replace localStorage
-   "continue watching" with AniList "Watching" list. (Biggest retention lever; AniList
-   API is free and we already use it.)
-2. **Browse/Filter pages** — proper `/browse` with genre, year, season, format, status,
-   and sort; **search autosuggest**; A-Z. All AniList GraphQL.
-3. **Airing schedule + countdowns** page (AniList `airingSchedule`).
-4. **Smarter embed switcher** — remember the user's provider, **auto-fallback** when an
-   iframe errors/`X-Frame`-denies, reorderable provider preference, show per-title
-   availability. (Mitigates today's per-title 404s.)
-5. **Filler-aware episode grid** — mark filler eps (AnimeFillerList), optional hide.
+1. **AniList OAuth sync — BUILT (2026-06-04, code-complete; needs an app +
+   `NEXT_PUBLIC_ANILIST_CLIENT_ID` + `ANILIST_CLIENT_SECRET` to go live).** **Authorization
+   code grant** (AniList rejects implicit grant); a server route does the token exchange so
+   the secret never reaches the browser. Token ~1yr. Two-way: pull-merge on login, debounce
+   conservative push of watchlist + progress (never downgrades AniList). Augments the local
+   stores rather than replacing them (keeps offline use). See STREAMING-ROADMAP §8a.
+2. **Browse/Filter pages — DONE** (`/browse` with genre, year, season, format, status,
+   sort; `/schedule` exists too). **Search autosuggest — BUILT (2026-06-04).** A-Z still
+   open. All AniList GraphQL.
+3. **Airing schedule + countdowns — DONE** (`/schedule`, AniList `airingSchedules`, next 7
+   days, grouped today-first).
+4. **Smarter embed switcher — BUILT (2026-06-04):** remembers the working provider per
+   title (`kessoku.embed.byTitle`) and **auto-falls-back** through servers on a stall
+   (was manual-only); a manual pick pauses auto-advance. Reorderable preference still open.
+5. **Filler-aware episode grid — DONE** — marks filler eps (AnimeFillerList).
 6. **Mark-as-watched on episode open** → push to AniList (the only progress signal we
    *can* get from an embed, since the iframe is cross-origin).
 7. **Polish:** theme switcher (we have tokens), PWA install, a `/status` page + Discord

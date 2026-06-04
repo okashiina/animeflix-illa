@@ -2,14 +2,18 @@ import { useEffect, useRef, useState } from 'react';
 
 import { setDub, setProvider } from '@store/slices/videoSettings';
 import { useDispatch, useSelector } from '@store/store';
-import { embedProviders, getProvider } from '@utility/embedProviders';
+import {
+  embedProviders,
+  getProvider,
+  rememberedProvider,
+  rememberProvider,
+} from '@utility/embedProviders';
 
 // How long to wait for the iframe's onLoad before assuming the server is slow
 // or blocked. We can't read a cross-origin iframe, so this is a heuristic only.
 const LOAD_TIMEOUT_MS = 11000;
 
-// localStorage keys must match those written by the videoSettings slice.
-const PROVIDER_KEY = 'videoSettings.provider';
+// localStorage key for the dub flag (provider is reconciled by the slice).
 const DUB_KEY = 'videoSettings.useDub';
 
 const EmbedPlayer: React.FC = () => {
@@ -20,15 +24,16 @@ const EmbedPlayer: React.FC = () => {
   ]);
   const { useDub, provider } = useSelector((store) => store.videoSettings);
 
-  // The Redux store is preloaded from SSR (where window/localStorage do not
-  // exist), so on first client mount we reconcile it with any saved choices.
-  // This runs once and is SSR-safe (effects never run on the server).
+  // Once the user manually picks a server for this title, stop auto-advancing —
+  // their choice wins. Reset per title. Counts auto-advances so we cycle the
+  // provider list at most once before falling back to the manual UI.
+  const userPickedRef = useRef(false);
+  const attemptsRef = useRef(0);
+
+  // Reconcile the dub flag with any saved choice once on mount (SSR-safe —
+  // effects never run on the server). Provider is initialised by the slice.
   useEffect(() => {
     try {
-      const savedProvider = window.localStorage.getItem(PROVIDER_KEY);
-      if (savedProvider && getProvider(savedProvider).id === savedProvider) {
-        dispatch(setProvider(savedProvider));
-      }
       const savedDub = window.localStorage.getItem(DUB_KEY);
       if (savedDub !== null) dispatch(setDub(savedDub === 'true'));
     } catch {
@@ -38,36 +43,84 @@ const EmbedPlayer: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // On each new title, reset the user's override and prefer a server we've
+  // previously seen carry THIS title (else keep the user's global pick).
+  useEffect(() => {
+    userPickedRef.current = false;
+    const remembered = rememberedProvider(animeId);
+    if (remembered && remembered !== provider)
+      dispatch(setProvider(remembered));
+    // Only react to a title change; `provider` is read as the current value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [animeId]);
+
+  // Fresh auto-advance budget for every episode (and title), so a stalled later
+  // episode can still cycle servers.
+  useEffect(() => {
+    attemptsRef.current = 0;
+  }, [animeId, episode]);
+
   const src = getProvider(provider).build(animeId, episode, useDub);
 
   // Timeout heuristic: assume the player is stalled until onLoad fires.
   const [stalled, setStalled] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Reset the stall timer whenever the src changes (provider/episode/dub).
-  useEffect(() => {
-    setStalled(false);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setStalled(true), LOAD_TIMEOUT_MS);
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [src]);
-
-  const handleLoad = () => {
-    // onLoad fires once the iframe document loads. We cannot tell whether the
-    // provider found the episode (cross-origin), only that *something* loaded.
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setStalled(false);
-  };
-
-  const tryNextProvider = () => {
+  const advanceProvider = () => {
     const currentIndex = embedProviders.findIndex((p) => p.id === provider);
     const next =
       embedProviders[(currentIndex + 1) % embedProviders.length] ??
       embedProviders[0];
     dispatch(setProvider(next.id));
+  };
+
+  // Manual server pick (chips / "try another") — pauses auto-advance for the title.
+  const pickProvider = (id: string) => {
+    userPickedRef.current = true;
+    attemptsRef.current = 0;
+    setStalled(false);
+    dispatch(setProvider(id));
+  };
+
+  const tryAnotherManually = () => {
+    userPickedRef.current = true;
+    setStalled(false);
+    advanceProvider();
+  };
+
+  // Reset the stall timer whenever the src changes (provider/episode/dub).
+  // On timeout, auto-advance through the list once; only after exhausting it do
+  // we surface the manual "try another server" UI.
+  useEffect(() => {
+    setStalled(false);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      if (
+        !userPickedRef.current &&
+        attemptsRef.current < embedProviders.length - 1
+      ) {
+        attemptsRef.current += 1;
+        advanceProvider();
+      } else {
+        setStalled(true);
+      }
+    }, LOAD_TIMEOUT_MS);
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+    // advanceProvider is recreated each render but reads current state; we only
+    // want to reset the timer when the src changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src]);
+
+  const handleLoad = () => {
+    // onLoad fires once the iframe document loads. We cannot tell whether the
+    // provider found the episode (cross-origin), only that *something* loaded —
+    // so remembering the server for this title is best-effort.
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setStalled(false);
+    rememberProvider(animeId, provider);
   };
 
   return (
@@ -97,7 +150,7 @@ const EmbedPlayer: React.FC = () => {
             </p>
             <button
               type="button"
-              onClick={tryNextProvider}
+              onClick={tryAnotherManually}
               className="rounded-lg bg-aurora px-4 py-2 text-sm font-semibold text-accent-ink shadow-glow transition active:scale-95"
             >
               Try another server
@@ -121,7 +174,7 @@ const EmbedPlayer: React.FC = () => {
             <button
               key={p.id}
               type="button"
-              onClick={() => dispatch(setProvider(p.id))}
+              onClick={() => pickProvider(p.id)}
               aria-pressed={active}
               className={`rounded-full px-3 py-1 text-xs font-medium transition duration-150 active:scale-95 ${
                 active

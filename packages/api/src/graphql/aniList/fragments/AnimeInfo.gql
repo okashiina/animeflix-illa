@@ -1,5 +1,6 @@
 fragment AnimeInfo on Media {
   id
+  idMal
   title {
     english
     romaji

@@ -6,6 +6,7 @@ import { DefaultSeo } from 'next-seo';
 import { Provider } from 'react-redux';
 
 import progressBar from '@components/Progress';
+import useAniListSync from '@hooks/useAniListSync';
 import { useStore } from '@store/store';
 
 // start progress bar when the route starts to change
@@ -16,6 +17,9 @@ Router.events.on('routeChangeError', progressBar.finish);
 
 function MyApp({ Component, pageProps }: AppProps) {
   const reduxStore = useStore(pageProps.initialReduxState);
+
+  // App-wide AniList sync (no-op when logged out / client id unset).
+  useAniListSync();
 
   return (
     <>

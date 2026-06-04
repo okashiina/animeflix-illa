@@ -14,7 +14,7 @@ import { NextSeo } from 'next-seo';
 import RelatedSection, {
   type RelationItem,
 } from '@components/anime/RelatedSection';
-import WatchlistButton from '@components/anime/WatchlistButton';
+import StatusSelect from '@components/anime/StatusSelect';
 import Genre from '@components/Genre';
 import Header from '@components/Header';
 import progressBar from '@components/Progress';
@@ -168,6 +168,7 @@ const Watch = ({
               titles={[anime.title.romaji, anime.title.english].filter(
                 (t): t is string => Boolean(t)
               )}
+              malId={anime.idMal}
               onNext={
                 episode < totalEpisodes
                   ? () => dispatch(setEpisode(episode + 1))
@@ -185,7 +186,7 @@ const Watch = ({
                 <h1 className="font-display text-2xl font-bold leading-tight text-fg sm:text-3xl">
                   {anime.title.romaji || anime.title.english}
                 </h1>
-                <WatchlistButton id={anime.id} variant="labeled" />
+                <StatusSelect id={anime.id} />
               </div>
             </div>
 

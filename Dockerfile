@@ -39,6 +39,11 @@ ENV NEXT_TELEMETRY_DISABLED 1
 ARG NEXT_PUBLIC_SOURCE_SERVICE_URL
 ENV NEXT_PUBLIC_SOURCE_SERVICE_URL=$NEXT_PUBLIC_SOURCE_SERVICE_URL
 
+# AniList OAuth client id — also a NEXT_PUBLIC_* that must be baked at build time
+# (the Header sign-in button hides itself when it's unset). Same ARG→ENV pattern.
+ARG NEXT_PUBLIC_ANILIST_CLIENT_ID
+ENV NEXT_PUBLIC_ANILIST_CLIENT_ID=$NEXT_PUBLIC_ANILIST_CLIENT_ID
+
 # build the image
 RUN yarn build
 

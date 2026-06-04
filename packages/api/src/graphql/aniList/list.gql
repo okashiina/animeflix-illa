@@ -1,0 +1,16 @@
+# A user's full anime list (all status groups). `id` is the MediaList entry id,
+# required to DeleteMediaListEntry later; `mediaId` is the AniList Media id we
+# key our local stores by.
+query userMediaList($userId: Int!) {
+  MediaListCollection(userId: $userId, type: ANIME) {
+    lists {
+      entries {
+        id
+        mediaId
+        status
+        progress
+        updatedAt
+      }
+    }
+  }
+}
