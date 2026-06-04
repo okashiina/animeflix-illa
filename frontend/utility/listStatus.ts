@@ -20,6 +20,9 @@ const KEY = 'kessoku.liststatus.v1';
 const store = createStore<StatusMap>(KEY, {});
 export const subscribeStatus = store.subscribe;
 
+/** The whole explicit-status map (for AniList sync diffing). Read-only. */
+export const getStatusMap = (): Readonly<StatusMap> => store.get();
+
 // Order shown in the picker. REPEATING is omitted from the UI but still
 // respected if AniList sends it on a pull.
 export const STATUS_OPTIONS: { value: AniStatus; label: string }[] = [

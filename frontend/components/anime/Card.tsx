@@ -51,7 +51,9 @@ const Card: React.FC<CardProps> = ({ anime }) => {
               <WatchlistButton id={anime.id} variant="icon" />
             </div>
 
-            <span className="absolute inset-0 flex items-center justify-center opacity-0 transition duration-300 group-hover:opacity-100">
+            {/* Decorative play affordance. pointer-events-none so it doesn't
+                cover the bookmark button below it (the whole card is the link). */}
+            <span className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition duration-300 group-hover:opacity-100">
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-aurora text-accent-ink shadow-glow">
                 <PlayIcon className="ml-0.5 h-6 w-6" />
               </span>

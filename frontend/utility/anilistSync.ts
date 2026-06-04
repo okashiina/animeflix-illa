@@ -1,6 +1,7 @@
 import { authHeader, type AniListSession } from './anilistAuth';
 import {
   getExplicitStatus,
+  getStatusMap,
   setExplicitStatus,
   type AniStatus,
 } from './listStatus';
@@ -16,13 +17,18 @@ import { addToWatchlist, inWatchlist, listWatchlistIds } from './watchlist';
 // fetch (no @animeflix/api runtime in the client bundle). Best-effort: every
 // network path is guarded, and anonymous use never depends on it.
 //
-// Model: on login we PULL the AniList list and merge it into the local stores
-// (additive — never wipes local; the remote status is mirrored as the local
-// explicit status). Thereafter local changes PUSH up: a status the user sets
-// explicitly is sent as-is; a progress advance bumps the status forward only
-// (PLANNING→CURRENT→COMPLETED) and never auto-rewrites a status it doesn't model
-// (DROPPED / PAUSED / REPEATING). New entries are created; an emptied bookmark is
-// deleted.
+// Model: on login we PULL the AniList list and merge it locally; thereafter
+// local changes PUSH up. The local stores are the source of truth for the
+// user's intent, so the pull must NOT clobber a change the user made here that
+// has not been pushed yet. Two persisted intent records make that safe across a
+// page refresh (when the in-memory sync state is wiped):
+//   - tombstones: ids the user removed locally → force-delete on AniList and
+//     never resurrect on a pull (fixes removed titles re-appearing).
+//   - dirty:      ids whose explicit status the user just changed → keep the
+//     local status over the remote one until the change is pushed (fixes e.g.
+//     setting "Plan to Watch" not sticking after a refresh).
+// A progress advance still bumps the status forward only and never rewrites a
+// status it does not model (DROPPED / PAUSED / REPEATING).
 
 const ENDPOINT = 'https://graphql.anilist.co';
 
@@ -108,11 +114,7 @@ const gql = async <T>(
 };
 
 // ---------------------------------------------------------------------------
-// Module state. The sync is intentionally CONSERVATIVE: it only ever *advances*
-// progress and *adds* entries, and only deletes a bookmark that has no progress.
-// It never downgrades progress or rewrites a status it doesn't model
-// (DROPPED / PAUSED / REPEATING), so importing then re-syncing can't clobber a
-// curated AniList list.
+// In-memory baseline (the last-seen remote state), rebuilt by every pull.
 // ---------------------------------------------------------------------------
 
 const entryIdByMedia = new Map<number, number>(); // mediaId -> MediaList entry id (for deletes)
@@ -120,10 +122,116 @@ const remoteProgress = new Map<number, number>(); // last-known AniList progress
 const remoteStatus = new Map<number, AniStatus>(); // last-known AniList status per mediaId
 const totalByMedia = new Map<number, number>(); // episode count per mediaId (from pull)
 const knownRemote = new Set<number>(); // mediaIds AniList already has
-let lastWatchlist: Set<number> | null = null; // watchlist snapshot at last sync (delete detection)
+let pulledOnce = false; // a pull has completed this session (the baseline is real)
 let applyingRemote = false;
 
 export const isApplyingRemote = (): boolean => applyingRemote;
+
+// ---------------------------------------------------------------------------
+// Persisted intent layer (survives a refresh). Tombstones + dirty-status flags
+// are what stop the next pull from clobbering an un-pushed local change.
+// ---------------------------------------------------------------------------
+
+const META_KEY = 'kessoku.anilist.sync.v1';
+interface SyncMeta {
+  tombstones: Record<number, number>; // mediaId -> removedAt (pending delete)
+  dirty: Record<number, number>; // mediaId -> changedAt (status pending push)
+}
+let meta: SyncMeta = { tombstones: {}, dirty: {} };
+let metaLoaded = false;
+
+const loadMeta = (): void => {
+  if (metaLoaded || typeof window === 'undefined') return;
+  metaLoaded = true;
+  try {
+    const raw = window.localStorage.getItem(META_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<SyncMeta>;
+      meta = {
+        tombstones: parsed.tombstones ?? {},
+        dirty: parsed.dirty ?? {},
+      };
+    }
+  } catch {
+    /* ignore a corrupt blob */
+  }
+};
+
+const saveMeta = (): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(META_KEY, JSON.stringify(meta));
+  } catch {
+    /* ignore quota / private-mode failures */
+  }
+};
+
+// Diff baseline for detecting genuine user edits (vs. our own remote writes).
+let prevStatus: Record<number, AniStatus> | null = null;
+let prevWatchlist: Set<number> | null = null;
+
+const resetDiffBaseline = (): void => {
+  prevStatus = { ...getStatusMap() };
+  prevWatchlist = new Set(listWatchlistIds());
+};
+
+/** Seed the diff baseline on mount, before any user edit fires. */
+export const initLocalBaseline = (): void => {
+  loadMeta();
+  resetDiffBaseline();
+};
+
+/**
+ * Record what the user just changed locally, so the next pull won't override it
+ * and the next push knows to send it. Called on every local store change. No-op
+ * while we are applying a remote pull (those writes are ours, not the user's).
+ */
+export const noteLocalChange = (): void => {
+  if (applyingRemote) {
+    resetDiffBaseline();
+    return;
+  }
+  loadMeta();
+  const curStatus = getStatusMap();
+  const curWl = new Set(listWatchlistIds());
+  let changed = false;
+
+  if (prevStatus) {
+    const ps = prevStatus;
+    Object.keys(curStatus).forEach((k) => {
+      const id = Number(k);
+      if (curStatus[id] !== ps[id]) {
+        meta.dirty[id] = Date.now();
+        delete meta.tombstones[id]; // it's on the list with a status
+        changed = true;
+      }
+    });
+  }
+
+  if (prevWatchlist) {
+    const pw = prevWatchlist;
+    pw.forEach((id) => {
+      if (!curWl.has(id)) {
+        // Removed since the last snapshot → tombstone it (force-delete on push,
+        // and don't let the next pull resurrect it).
+        meta.tombstones[id] = Date.now();
+        delete meta.dirty[id];
+        changed = true;
+      }
+    });
+    curWl.forEach((id) => {
+      if (!pw.has(id) && meta.tombstones[id]) {
+        // Re-added → cancel any pending delete.
+        delete meta.tombstones[id];
+        changed = true;
+      }
+    });
+  }
+
+  prevStatus = { ...curStatus };
+  prevWatchlist = curWl;
+  if (changed) saveMeta();
+};
 
 /** AniList "progress" = episodes completed. Highest watched, or mid-episode−1. */
 const aniListProgress = (e?: ProgressEntry): number => {
@@ -139,11 +247,6 @@ const progressStatus = (id: number, progress: number): AniStatus => {
   if (total > 0 && progress >= total) return 'COMPLETED';
   if (progress > 0) return 'CURRENT';
   return 'PLANNING';
-};
-
-const hasNoProgress = (id: number): boolean => {
-  const e = getEntry(id);
-  return !e || (e.watched.length === 0 && e.sec <= 5);
 };
 
 interface ViewerData {
@@ -179,33 +282,44 @@ interface ListData {
 
 /** Pull the user's AniList anime list and merge it into the local stores. */
 export const pullAndMerge = async (session: AniListSession): Promise<void> => {
+  loadMeta();
   const data = await gql<ListData>(
     LIST_Q,
     { userId: session.user.id },
     session.token
   );
-  const lists = data?.MediaListCollection?.lists ?? [];
+  // A failed query must be a no-op: leave the local stores and the intent flags
+  // (tombstones / dirty) untouched, and don't mark a baseline that doesn't exist
+  // (otherwise a network blip could be read as "AniList has nothing" and clear
+  // pending deletes). An empty-but-present list is a real, successful pull.
+  if (!data) return;
+  const lists = data.MediaListCollection?.lists ?? [];
 
   applyingRemote = true;
   try {
     lists.forEach((l) =>
       (l?.entries ?? []).forEach((e) => {
         if (!e || !e.mediaId) return;
-        entryIdByMedia.set(e.mediaId, e.id);
-        knownRemote.add(e.mediaId);
-        remoteProgress.set(e.mediaId, e.progress ?? 0);
+        const m = e.mediaId;
+        // Baseline always tracks AniList, even for tombstoned ids (the push
+        // needs the entry id to delete them).
+        entryIdByMedia.set(m, e.id);
+        knownRemote.add(m);
+        remoteProgress.set(m, e.progress ?? 0);
         const episodes = e.media?.episodes ?? undefined;
-        if (episodes) totalByMedia.set(e.mediaId, episodes);
-        addToWatchlist(e.mediaId);
-        // Mirror AniList's status locally so the picker / tabs match it (and so
-        // a later push doesn't see a phantom change).
+        if (episodes) totalByMedia.set(m, episodes);
         const status = normalizeStatus(e.status);
-        if (status) {
-          remoteStatus.set(e.mediaId, status);
-          setExplicitStatus(e.mediaId, status);
-        }
+        if (status) remoteStatus.set(m, status);
+
+        // Pending local delete → don't resurrect it; the next push removes it.
+        if (meta.tombstones[m]) return;
+
+        addToWatchlist(m);
+        // Mirror AniList's status locally UNLESS the user has an un-pushed local
+        // status change for this title (then local wins until it's pushed).
+        if (status && !meta.dirty[m]) setExplicitStatus(m, status);
         if (typeof e.progress === 'number' && e.progress > 0) {
-          mergeWatchedUpTo(e.mediaId, e.progress, episodes);
+          mergeWatchedUpTo(m, e.progress, episodes);
         }
       })
     );
@@ -213,8 +327,10 @@ export const pullAndMerge = async (session: AniListSession): Promise<void> => {
     applyingRemote = false;
   }
 
-  // Snapshot the watchlist so deletes are detected against the merged baseline.
-  lastWatchlist = new Set(listWatchlistIds());
+  pulledOnce = true;
+  // The writes above were ours; reset the diff baseline so they aren't mistaken
+  // for user edits on the next change event.
+  resetDiffBaseline();
 };
 
 // Decide what (if anything) to push for one title, given its remote baseline.
@@ -258,58 +374,99 @@ const planPush = (
 };
 
 /**
- * Push local changes up. See the module header for the rules. Creates + status
- * changes + progress advances first, then deletes emptied bookmarks.
+ * Push local changes up. Creates + status changes + progress advances first,
+ * then deletes tombstoned (locally-removed) entries on AniList regardless of
+ * progress. Clears each intent flag once its change lands.
  */
 export const pushChanges = async (session: AniListSession): Promise<void> => {
+  loadMeta();
   const { token } = session;
   const watchlistIds = listWatchlistIds();
   const watchlist = new Set(watchlistIds);
   const localIds = Array.from(
-    new Set<number>([...watchlistIds, ...listProgressIds()])
+    new Set<number>([
+      ...watchlistIds,
+      ...listProgressIds(),
+      ...Object.keys(meta.dirty).map(Number),
+    ])
   );
 
-  const save = async (id: number, status: AniStatus, progress: number) => {
+  // Returns true only when AniList confirms the save. On failure we leave the
+  // baseline alone and the caller keeps the dirty flag so it retries.
+  const save = async (
+    id: number,
+    status: AniStatus,
+    progress: number
+  ): Promise<boolean> => {
     const res = await gql<{
       SaveMediaListEntry?: { id: number; mediaId: number };
     }>(SAVE_M, { mediaId: id, status, progress }, token);
     const saved = res?.SaveMediaListEntry;
-    if (saved?.id && saved.mediaId) {
-      entryIdByMedia.set(saved.mediaId, saved.id);
-      knownRemote.add(saved.mediaId);
-    }
+    if (!saved?.id || !saved.mediaId) return false;
+    entryIdByMedia.set(saved.mediaId, saved.id);
+    knownRemote.add(saved.mediaId);
     remoteProgress.set(id, progress);
     remoteStatus.set(id, status);
+    return true;
   };
+
+  let metaChanged = false;
 
   // Creates + status changes + progress advances.
   // eslint-disable-next-line no-restricted-syntax
   for (const id of localIds) {
+    // eslint-disable-next-line no-continue
+    if (meta.tombstones[id]) continue; // being deleted below — don't re-create
     const plan = planPush(id, watchlist.has(id));
+    let ok = true;
     if (plan) {
       // eslint-disable-next-line no-await-in-loop
-      await save(id, plan.status, plan.progress);
+      ok = await save(id, plan.status, plan.progress);
+    }
+    // Clear the dirty flag only when the push actually landed (or there was
+    // nothing to send). A failed push keeps it, so the local status stays
+    // protected from the next pull and is retried on the following sync.
+    if (ok && meta.dirty[id] !== undefined) {
+      delete meta.dirty[id];
+      metaChanged = true;
     }
   }
 
-  // Deletes: bookmarks removed since the last sync that carry no progress.
-  if (lastWatchlist) {
-    const removed = Array.from(lastWatchlist);
-    // eslint-disable-next-line no-restricted-syntax
-    for (const id of removed) {
+  // Deletes: tombstoned ids → remove on AniList regardless of progress.
+  const tombIds = Object.keys(meta.tombstones).map(Number);
+  // eslint-disable-next-line no-restricted-syntax
+  for (const id of tombIds) {
+    if (inWatchlist(id)) {
+      // Re-added in the meantime — cancel the delete.
+      delete meta.tombstones[id];
+      metaChanged = true;
       // eslint-disable-next-line no-continue
-      if (watchlist.has(id) || inWatchlist(id) || !hasNoProgress(id)) continue;
-      const entryId = entryIdByMedia.get(id);
-      // eslint-disable-next-line no-continue
-      if (!entryId) continue;
+      continue;
+    }
+    const entryId = entryIdByMedia.get(id);
+    if (entryId) {
       // eslint-disable-next-line no-await-in-loop
-      await gql(DELETE_M, { id: entryId }, token);
-      entryIdByMedia.delete(id);
-      knownRemote.delete(id);
-      remoteProgress.delete(id);
-      remoteStatus.delete(id);
+      const res = await gql<{
+        DeleteMediaListEntry?: { deleted?: boolean | null };
+      }>(DELETE_M, { id: entryId }, token);
+      // Only drop the tombstone once AniList confirms the delete; a failed call
+      // keeps it so the removal is retried (and the pull won't resurrect it).
+      if (res?.DeleteMediaListEntry?.deleted) {
+        entryIdByMedia.delete(id);
+        knownRemote.delete(id);
+        remoteProgress.delete(id);
+        remoteStatus.delete(id);
+        delete meta.tombstones[id];
+        metaChanged = true;
+      }
+    } else if (pulledOnce && !knownRemote.has(id)) {
+      // A successful pull has confirmed AniList doesn't have this id → nothing
+      // to delete; clear the tombstone.
+      delete meta.tombstones[id];
+      metaChanged = true;
     }
+    // Otherwise keep the tombstone and retry after the next successful pull.
   }
 
-  lastWatchlist = watchlist;
+  if (metaChanged) saveMeta();
 };
