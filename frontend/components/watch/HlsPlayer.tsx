@@ -7,6 +7,7 @@ import {
 } from 'react';
 
 import { type SkipMarkers } from '@utility/aniskip';
+import { registerAiredSource } from '@utility/companionContext';
 import { getEntry, markWatched, savePosition } from '@utility/progress';
 
 // Our own player chrome for the self-hosted (Option B) HLS stream. Native
@@ -618,7 +619,12 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
     if (!v) return undefined;
     const tracks = v.textTracks;
     for (let i = 0; i < tracks.length; i += 1) {
-      tracks[i].mode = i === subIdx ? 'hidden' : 'disabled';
+      // The selected track is 'hidden' (we paint its cues ourselves). When
+      // nothing is selected, keep the first track 'hidden' too so its cues stay
+      // parsed for the companion's spoiler-safe grounding. 'hidden' parses cues
+      // without ever displaying them, so this is invisible to the viewer.
+      const groundOnly = subIdx < 0 && i === 0;
+      tracks[i].mode = i === subIdx || groundOnly ? 'hidden' : 'disabled';
     }
     setCueText('');
     const t = subIdx >= 0 ? tracks[subIdx] : undefined;
@@ -653,6 +659,50 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
       v.removeEventListener('timeupdate', render);
     };
   }, [subIdx, subtitles.length, src, subOffset]);
+
+  // ---- AI companion grounding. Expose a spoiler-safe subtitle window: the lines
+  // whose start time is at or before the current playback position. Reads the cue
+  // list the browser already parsed and never returns a cue from the future, so
+  // the companion can talk about this moment without spoiling what comes next.
+  // Only the direct player registers; on embed the companion drops to episode level.
+  useEffect(() => {
+    registerAiredSource(() => {
+      const v = videoRef.current;
+      if (!v) return null;
+      const tracks = v.textTracks;
+      let cues: TextTrackCueList | null = null;
+      if (subIdx >= 0 && tracks[subIdx]) cues = tracks[subIdx].cues;
+      if (!cues || !cues.length) {
+        for (let i = 0; i < tracks.length; i += 1) {
+          if (tracks[i].cues && tracks[i].cues!.length) {
+            cues = tracks[i].cues;
+            break;
+          }
+        }
+      }
+      const now = v.currentTime;
+      const items: { t: number; text: string }[] = [];
+      if (cues) {
+        for (let i = 0; i < cues.length; i += 1) {
+          const c = cues[i] as VTTCue;
+          if (c.startTime <= now) {
+            const text = c.text
+              .replace(/<[^>]+>/g, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+            if (text) items.push({ t: c.startTime, text });
+          }
+        }
+      }
+      items.sort((a, b) => a.t - b.t);
+      return {
+        lines: items.slice(-40).map((x) => x.text),
+        current: now,
+        duration: v.duration || 0,
+      };
+    });
+    return () => registerAiredSource(null);
+  }, [subIdx, subtitles.length]);
 
   // Fullscreen state sync. Refocus the stage on enter so keyboard keeps working.
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { GetServerSideProps, InferGetServerSidePropsType } from 'next';
 import { useRouter } from 'next/router';
@@ -9,6 +9,7 @@ import {
   AnimeInfoFragment,
   MediaType,
 } from '@animeflix/api/aniList';
+import { SparklesIcon } from '@heroicons/react/outline';
 import { NextSeo } from 'next-seo';
 
 import RelatedSection, {
@@ -19,6 +20,7 @@ import Genre from '@components/Genre';
 import Header from '@components/Header';
 import progressBar from '@components/Progress';
 import RecommendationCard from '@components/watch/Card';
+import CompanionChat from '@components/watch/CompanionChat';
 import Episode from '@components/watch/Episode';
 import SourcePlayer from '@components/watch/SourcePlayer';
 import WatchControls from '@components/watch/WatchControls';
@@ -132,6 +134,24 @@ const Watch = ({
   // get data about next airing episode
   const { nextAiringEpisode } = anime;
 
+  // Right rail switches between recommendations and the AI watch companion.
+  const [asideTab, setAsideTab] = useState<'recommended' | 'companion'>(
+    'recommended'
+  );
+
+  // Seed the companion with what it is allowed to know about the show up front.
+  // The synopsis is HTML-stripped here; the per-moment subtitle window is pulled
+  // live from the player at send time (see CompanionChat / companionContext).
+  const companionSeed = {
+    title: anime.title.english || anime.title.romaji || '',
+    synopsis: (anime.description || '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    genres: anime.genres ?? [],
+    format: anime.format || '',
+  };
+
   return (
     <>
       <NextSeo
@@ -232,19 +252,50 @@ const Watch = ({
             <RelatedSection items={related} flush />
           </div>
 
-          {/* Recommendations */}
+          {/* Right rail: recommendations or the AI watch companion */}
           <aside className="mt-10 lg:mt-0">
-            <h2 className="mb-3 font-display text-lg font-bold text-fg">
-              Recommended
-            </h2>
-            <div className="space-y-2">
-              {recommended.map((recommendation) => (
-                <RecommendationCard
-                  anime={recommendation}
-                  key={recommendation.id}
-                />
-              ))}
+            <div className="mb-3 inline-flex rounded-full border border-line/60 p-0.5 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setAsideTab('recommended')}
+                className={`rounded-full px-3 py-1 transition ${
+                  asideTab === 'recommended'
+                    ? 'bg-aurora text-accent-ink shadow-glow'
+                    : 'text-muted hover:text-fg'
+                }`}
+              >
+                Recommended
+              </button>
+              <button
+                type="button"
+                onClick={() => setAsideTab('companion')}
+                className={`flex items-center gap-1 rounded-full px-3 py-1 transition ${
+                  asideTab === 'companion'
+                    ? 'bg-aurora text-accent-ink shadow-glow'
+                    : 'text-muted hover:text-fg'
+                }`}
+              >
+                <SparklesIcon className="h-3.5 w-3.5" />
+                Companion
+              </button>
             </div>
+
+            {asideTab === 'recommended' ? (
+              <div className="space-y-2">
+                {recommended.map((recommendation) => (
+                  <RecommendationCard
+                    anime={recommendation}
+                    key={recommendation.id}
+                  />
+                ))}
+              </div>
+            ) : (
+              <CompanionChat
+                seed={companionSeed}
+                episode={episode}
+                total={totalEpisodes}
+              />
+            )}
           </aside>
         </div>
       </main>

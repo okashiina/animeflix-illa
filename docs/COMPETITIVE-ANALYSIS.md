@@ -123,6 +123,11 @@ When hosting is available (see roadmap §4/§5a), this closes the big gaps at on
 3. **m3u8 proxy** (already scaffolded) with Referer/Origin injection + caching +
    circuit breaker; optional **encrypted FE↔BE pipe** (Miruro-style) to deter leeching.
 4. **Watch Together** (sync playback + chat) — only feasible with our own player.
+5. **AI watch companion** (*built 2026-06-04, live chat pending a free API key* — roadmap §11):
+   an in-player chat persona grounded on the synopsis + an anti-spoiler subtitle window, with
+   selectable tone. No competitor in the matrix ships this; it is the one differentiator our own
+   player uniquely enables (the direct player's timestamp + subtitle access give scene-level
+   spoiler-safety). Default model = free Gemini 2.0 Flash; Groq is an env swap.
 
 ### Player decision
 **Vidstack** (`@vidstack/react`). Rationale: React-native (our stack), HLS via hls.js,

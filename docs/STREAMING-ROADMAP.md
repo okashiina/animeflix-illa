@@ -376,20 +376,12 @@ before any of it earns a phase number.
   work. Park unless it can beat the simpler non-chat version on something concrete.
 
 **B. AI watch companion (the standout idea — both people in the chat lit up at it).**
-- Pitch: an AI persona you can chat with *while the episode plays* — it reacts, banters,
-  answers "wait, who is that again?", and talks about the show with you in real time.
-- Why it could be *the* selling point: people who watch obscure or niche titles have
-  nobody around to discuss them with. A companion that is always there to talk about
-  *this* episode is genuine differentiation, not a checkbox feature.
-- Brand fit: a Kessoku-Band-flavoured persona (Bocchi-shy, or bandmate energy) lines up
-  with the rebrand voice ("dark, cute, a little rock"). This is exactly the kind of
-  feature that identity is built to carry. Persona writing = a brand-copywriter job if
-  and when it becomes real.
-- Feasibility note (honest): the AI does **not** need to literally "watch" the frames.
-  Ground it on data we already have or are already sourcing — AniList synopsis + tags,
-  the **subtitle track** (Phase 3 already pulls VTT), and the current episode/timestamp
-  — so it can talk about what is happening with no video understanding. True
-  frame-level vision is a much heavier, much later thing; don't gate the idea on it.
+- **Promoted to a concrete design spec — see §11 below.** Short version: an AI persona you chat
+  with *while the episode plays*, in the Kessoku-Band voice, grounded on the AniList synopsis +
+  the subtitle track + the current timestamp (no frame-level video understanding needed). §11
+  records the three design pillars (per-episode knowledge seed, anti-spoiler subtitle window,
+  selectable tone), the architecture, and the build gate. The model + hosting research it builds
+  on stays in D/E below.
 
 **C. Watch together (synced co-watch rooms).**
 - Pitch: a shared room where friends watch in sync (play / pause / seek propagated)
@@ -459,7 +451,9 @@ and low enough latency to feel alive mid-episode. Against that, the free tiers r
   **1M-token context** — we can drop the *whole* episode's subtitle VTT + synopsis + tags
   in as grounding with no chunking. Free tier ~**1,500 requests/day, 15 RPM** (plenty for
   personal scale; Google trimmed free limits ~50–80% in late 2025, but 15 RPM is fine for
-  one viewer chatting). Prototype on this.
+  one viewer chatting). Prototype on this. **Update 2026-06-04:** on a fresh AI Studio key the
+  `gemini-2.0-flash` free tier came back `limit: 0`, so the build defaults to the model name
+  **`gemini-2.5-flash`** (same family, free quota live; `-lite` and `gemini-flash-latest` also work).
 - **Speed pick — Groq + Llama 3.3 70B.** ~**300+ tokens/sec**, replies feel instant — the
   best "talking while watching" feel. Limits ~**30 RPM / 1,000 req/day / 6,000 TPM**.
   Catch: the 6k tokens/min cap means **don't** stuff the full subtitle file each turn —
@@ -487,3 +481,133 @@ Prove people want to talk to it before we pay to run it.
 > [costbench — best free-tier API](https://costbench.com/best/best-llm-api-with-free-tier/),
 > [costgoat — OpenRouter free models](https://costgoat.com/pricing/openrouter-free-models),
 > [OpenRouter free-models collection](https://openrouter.ai/collections/free-models).
+
+---
+
+## 11. AI watch companion — BUILT 2026-06-04 (live chat pending an API key)
+
+Promoted from the §10-B brainstorm on a user request, then built the same day. **Status: shipped,
+code-complete, tsc + eslint clean, UI + route + anti-spoiler wiring verified in a real browser.
+The one thing left is a free API key** — drop a Gemini key into `COMPANION_API_KEY` and restart,
+and the setup note becomes the live companion. The design below is what it was built to; the
+"Shipped" list records the actual files.
+
+Why it earns the work: people who watch niche titles have nobody around to talk to about them. An
+always-there persona that can talk about *this* episode, in the Kessoku-Band voice, is real
+differentiation, not a checkbox.
+
+**Shipped (2026-06-04):**
+- `frontend/pages/api/companion.ts` — OpenAI-compatible chat route (GET status + POST), server-only
+  key, persona + tone prompts, anti-spoiler prompt guard. Returns 503 `companion_unconfigured`
+  when no key is set so the panel degrades to a friendly setup note.
+- `frontend/components/watch/CompanionChat.tsx` — the in-player chat panel (tone picker with the
+  18+ gate on "unhinged", message list, composer, setup state).
+- `frontend/utility/companionContext.ts` — the player→panel bridge that yields the spoiler-safe
+  window; `frontend/utility/companionPrefs.ts` — the tone + mature store.
+- `frontend/components/watch/HlsPlayer.tsx` — registers the aired-subtitle getter (cue scan bounded
+  by `currentTime`) and keeps a grounding track parsed; `frontend/pages/watch/[id].tsx` — mounts the
+  companion as a "Companion" tab beside Recommended in the right rail.
+- Env: `COMPANION_API_KEY` / `COMPANION_API_BASE` / `COMPANION_MODEL` (server-only, no Dockerfile
+  ARG needed); documented in `frontend/.env.example`. Default model = free **Gemini 2.5 Flash**.
+  Gotcha found live (2026-06-04): `gemini-2.0-flash` free tier is now **zeroed** for new keys
+  (429 RESOURCE_EXHAUSTED, `limit: 0`); `gemini-2.5-flash` (and `-lite`, `gemini-flash-latest`)
+  still carry free quota, so the default moved to 2.5-flash. Verified a real reply end-to-end
+  against the live key. Groq is a base+model env swap.
+- Reality on the deployed (embed-only) site: the panel still shows and grounds on synopsis +
+  "up to episode N"; the per-moment **subtitle** window is direct-player only (the embed iframe is
+  cross-origin), so scene-level spoiler-safety is best on the direct player.
+
+### 11a. Three design pillars
+
+**1. Knowledge seed (once per episode).** At session start the system prompt is seeded with what
+the companion knows about the show overall: title (romaji + english), synopsis
+(`anime.description`, HTML stripped), genres + tags, format, and "episode N of M". Every field is
+already on the watch-page props (`watchPage` → `AnimeInfo`), so no new fetch — thread it through
+the same props the player already receives.
+
+**2. Anti-spoiler progressive subtitle window (the core constraint).** The companion may only ever
+see dialogue that has **already played**. It must be able to answer "wait, who is that again?"
+about the last scene without ever hinting at what comes next.
+
+- *Mechanism (reuses code that already exists).* The player already parses the whole episode VTT
+  into an in-memory cue list and scans it every frame to render the active line (`HlsPlayer.tsx`,
+  the `t.cues` loop around L631-L646). The window is a second pass over that same list: collect
+  every cue with `startTime <= currentTime`, take a rolling tail of the most recent lines, and
+  **never** include a cue with `startTime > currentTime`.
+- *Two-layer guard.* (a) Data bound — future cues never leave the browser, so the model
+  physically cannot receive them. (b) Prompt guard — the system prompt states the companion only
+  knows up to the current moment and must never foreshadow or reveal unaired events. The data
+  bound is the real protection; the prompt guard covers the model inferring ahead from the
+  synopsis.
+- *Sizing.* Scale the window to the model's budget: Groq's ~6k tokens/min cap → a tail of recent
+  lines only; Gemini's 1M context → can carry every aired cue plus the synopsis with no chunking.
+
+**3. Selectable persona / tone.** A base Kessoku-Band voice (a brand-copywriter job when built)
+with a tone preset the viewer picks and can switch mid-episode, persisted in localStorage like the
+existing `autoNext` player pref. The presets the user asked for:
+
+| Tone | Behaviour | Note |
+|---|---|---|
+| Analytical | thematic / character "deep" reads, restrained | |
+| Hype buddy | jokes, reactions, high energy | |
+| Melancholic | soft, emotional, sits in the feels | |
+| Unhinged ("Bad Rudy") | vulgar / explicit / edgy | behind an explicit maturity opt-in; provider-ToS + safety caveat (Groq / Gemini free tiers may filter this; an uncensored OpenRouter model may be required) |
+| Adaptive | mirrors the viewer's own tone and energy | |
+
+Each preset is a system-prompt fragment layered on the base voice + the episode seed; the
+anti-spoiler rule applies to all of them.
+
+### 11b. Architecture (reuses existing patterns)
+
+```
+[ LLM endpoint ]  → OpenAI-compatible (Gemini free now / Groq alt / local Ollama later)
+          │
+          ▼
+[ Next.js /api/companion route ]  → server-only key; builds the prompt from
+          │                          seed + anti-spoiler window + tone + chat history
+          ▼
+[ in-player chat panel ]  → direct player only; absent on embed
+```
+
+- **Route.** New `frontend/pages/api/companion.ts` (POST), modeled on `/api/auth/anilist.ts`
+  (server-only secret, never bundled) and `/api/filler.ts` (request / cache shape). Holds
+  `GEMINI_API_KEY` / `GROQ_API_KEY` server-side. The endpoint is OpenAI-compatible, so "hosted
+  free tier now, local Ollama later" is a base-URL swap, not a rewrite (per §10 D/E).
+- **Contract.** Request `{ animeId, episode, total, tone, seed:{ title, synopsis, genres, tags,
+  format }, window:[ aired lines ], messages:[ chat history ], message }` → response `{ reply }`
+  (token streaming is a later polish, not the MVP).
+- **Client panel.** On the watch page, desktop = a "Chat" tab beside Recommended in the existing
+  `watch/[id].tsx` `lg:grid-cols-[minmax(0,1fr)_360px]` sidebar (or a right drawer); mobile = a
+  bottom drawer / accordion below the player. Use the design tokens already in the watch UI
+  (`bg-canvas-2`, `border-line/60`, `rounded-2xl`, `bg-aurora` send button, `text-fg/muted/faint`)
+  and reuse the existing overlay patterns (`AniListBenefitsModal.tsx`, the HlsPlayer settings
+  popover). Hidden / disabled whenever the player is on the embed fallback.
+- **Window plumbing.** Build the aired-cue window inside HlsPlayer from the same cue scan that is
+  already there; surface `currentTime` + the window to the panel via a callback or the existing
+  `store.timer.currentTime` Redux value.
+
+### 11c. Phasing + gate
+
+- **Foundation (mostly already shipped):** direct player as the default path, the VTT subtitle
+  pipeline, and `idMal` + metadata on the watch props. **Remaining gate:** the §10 D/E
+  model-hosting decision, and the player / sources being stable enough that the companion is not
+  competing with breakage.
+- **Build order when greenlit:** (1) thin text MVP — one tone, Gemini free, no streaming; (2) add
+  the knowledge seed + anti-spoiler window; (3) persona presets + switcher; (4) polish — streaming
+  replies, panel UX, per-episode history; (5) optional co-watch (§10-C) much later, as its own
+  build.
+- **Cost gate (unchanged from §10):** prove people actually want to talk to it on the free tier
+  before paying for an always-on GPU box.
+
+### 11d. Open decisions (settle at build time)
+
+- Companion *speech* language: bilingual / Indonesian (likely, since it is conversational content
+  like subtitles) vs English. UI chrome stays English per CLAUDE.md.
+- Default model: Gemini 2.0 Flash free (multilingual + 1M context) vs Groq for speed — §10
+  recommends starting on Gemini.
+- "Bad Rudy" content gating, and which provider tolerates explicit output under its ToS.
+- Panel placement (sidebar tab vs drawer) and whether chat history persists per episode.
+- Free-tier rate-limit / cost guardrails.
+
+> Skills for the build (not this round): persona / tone copy = `/brand-copywriter` + `/brand` +
+> `/stop-slop`; the chat-panel UI = `/impeccable` + `/ui-ux-pro-max` + `/frontend-design`.
