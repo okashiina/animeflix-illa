@@ -66,6 +66,12 @@ const runConversation = async (endpoint, convo) => {
   const messages = [];
   const exchanges = [];
 
+  // The companion route streams SSE by default now; ?nostream=1 returns the
+  // buffered { reply, cards } in one JSON shot, which is what this harness reads.
+  const url = endpoint.includes('?')
+    ? `${endpoint}&nostream=1`
+    : `${endpoint}?nostream=1`;
+
   for (let i = 0; i < convo.turns.length; i += 1) {
     const message = convo.turns[i];
     const body = {
@@ -76,14 +82,16 @@ const runConversation = async (endpoint, convo) => {
       mature: Boolean(convo.mature),
       window: convo.window || [],
       roster: (convo.seed && convo.seed.roster) || [],
+      studios: (convo.seed && convo.seed.studios) || [],
       messages: messages.slice(-10),
       message,
     };
 
     let reply = '';
+    let cards = [];
     let status = 0;
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -92,6 +100,7 @@ const runConversation = async (endpoint, convo) => {
       if (res.ok) {
         const json = await res.json();
         reply = (json && json.reply) || '';
+        cards = (json && json.cards) || [];
       } else {
         const detail = await res.text().catch(() => '');
         reply = `[no reply — HTTP ${status}] ${detail.slice(0, 160)}`;
@@ -104,7 +113,7 @@ const runConversation = async (endpoint, convo) => {
     if (status >= 200 && status < 300 && reply) {
       messages.push({ role: 'assistant', content: reply });
     }
-    exchanges.push({ user: message, reply, status });
+    exchanges.push({ user: message, reply, status, cards });
   }
 
   return exchanges;
@@ -112,8 +121,19 @@ const runConversation = async (endpoint, convo) => {
 
 // LLM judge. Returns { scores, notes } or null on failure. Scores are 1-5.
 const judge = async (convo, exchanges) => {
+  const cardLabel = (cards) =>
+    cards && cards.length
+      ? `\nCards shown (from verified AniList lookups, identity facts only): ${cards
+          .map((c) => `${c.kind}:${c.name}`)
+          .join(', ')}`
+      : '';
   const transcript = exchanges
-    .map((x, i) => `Turn ${i + 1}\nViewer: ${x.user}\nCompanion: ${x.reply}`)
+    .map(
+      (x, i) =>
+        `Turn ${i + 1}\nViewer: ${x.user}\nCompanion: ${x.reply}${cardLabel(
+          x.cards
+        )}`
+    )
     .join('\n\n');
 
   const context = [
@@ -129,11 +149,11 @@ const judge = async (convo, exchanges) => {
     ).join('\n')}`,
   ].join('\n');
 
-  const system = `You are a strict evaluator for an anime "watch companion" chatbot. The companion must behave like a friend watching alongside the viewer who only knows the show up to the aired subtitle lines provided. Score each dimension 1-5 (5 = excellent) for the whole conversation:
-- spoilerSafety: did it avoid revealing or hinting at ANYTHING past the aired window? A confident detail not in the window/cast is a spoiler or hallucination → low score.
-- groundedness: are its claims tied to the provided window/cast, not invented?
+  const system = `You are a strict evaluator for an anime "watch companion" chatbot. The companion must behave like a friend watching alongside the viewer who only knows the show up to the aired subtitle lines provided. The cast list gives ONLY names, a generic role label, and a voice actor — it says nothing about how characters are related, their personalities, or their backstories. Score each dimension 1-5 (5 = excellent) for the whole conversation:
+- spoilerSafety: did it avoid revealing or hinting at ANYTHING past the aired window? A confident detail not in the window/cast is a spoiler or a hallucination, and to the viewer the two are indistinguishable → low score. Inventing a character's name, family tie, personality, or motive that the window never showed is a spoilerSafety failure even if the show might later confirm it.
+- groundedness: are its claims tied to the provided window/cast, not invented? When the viewer asks who someone is, how characters are related, or why someone did something and the window does NOT contain the answer, the ONLY correct reply is to admit it has not been shown yet (and optionally ask the viewer). Doing that scores HIGH; answering with a specific name/relationship/motive, or agreeing with a guess the viewer floats that the window does not support, scores LOW. EXCEPTION — identity facts the companion fetched via a tool: if a turn shows a Card (voice actor / studio / character), the voice-actor name, studio, or other-works in that card are VERIFIED AniList identity facts and stating them is correct and grounded (score HIGH), since the companion looked them up rather than guessing. Cards never excuse a PLOT or RELATIONSHIP claim, only identity facts.
 - toneAdherence: does it match the selected tone?
-- specificity: is it concrete about the actual moment (named characters, real lines) vs generic praise?
+- specificity: is it concrete about the actual moment (named characters, real lines) vs generic praise? An honest "we haven't been shown that yet" is NOT a specificity penalty — never reward an invented detail over an honest refusal.
 - coherence: does it read as a natural, on-topic reply in the viewer's language?
 Respond ONLY with minified JSON: {"spoilerSafety":n,"groundedness":n,"toneAdherence":n,"specificity":n,"coherence":n,"notes":"one sentence"}.`;
 

@@ -265,25 +265,28 @@ const CastSection: React.FC<{
               key={character.id}
               className="flex items-stretch justify-between gap-3 rounded-2xl border border-line/60 bg-surface p-2.5"
             >
-              {/* Character side */}
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full bg-surface-2 ring-1 ring-line/40">
-                  {character.image?.medium && (
-                    <Image
-                      alt={character.name?.full ?? 'Character'}
-                      src={character.image.medium}
-                      layout="fill"
-                      objectFit="cover"
-                    />
-                  )}
-                </span>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-fg">
-                    {character.name?.full ?? 'Unknown'}
-                  </p>
-                  {role && <p className="text-xs text-faint">{role}</p>}
-                </div>
-              </div>
+              {/* Character side — opens the character's page (bio + where they
+                  appear), mirroring the VA link on the right. */}
+              <Link href={`/character/${character.id}`} passHref>
+                <a className="group flex min-w-0 items-center gap-3">
+                  <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full bg-surface-2 ring-1 ring-line/40 transition group-hover:ring-accent/50">
+                    {character.image?.medium && (
+                      <Image
+                        alt={character.name?.full ?? 'Character'}
+                        src={character.image.medium}
+                        layout="fill"
+                        objectFit="cover"
+                      />
+                    )}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-fg transition group-hover:text-accent">
+                      {character.name?.full ?? 'Unknown'}
+                    </p>
+                    {role && <p className="text-xs text-faint">{role}</p>}
+                  </div>
+                </a>
+              </Link>
 
               {/* Voice actor side (Japanese) */}
               {va ? (

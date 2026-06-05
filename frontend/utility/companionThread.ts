@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
+import type { CompanionCard } from './companion/types';
 import { createStore } from './externalStore';
 
 // Persistent chat thread for the AI watch companion, keyed per
@@ -19,6 +20,13 @@ export interface ThreadMessage {
   // Playback position (seconds) when the turn was sent, so the chat can show
   // "at 12:34" of the episode. Optional + only set on the direct player.
   t?: number;
+  // Entity cards (voice actor / studio / character) the companion surfaced for
+  // this reply, persisted so they render on reload without re-fetching AniList.
+  // Optional + additive, so v1 threads in localStorage still parse.
+  cards?: CompanionCard[];
+  // True for a proactive "watch-along" reaction (no user prompt). Reserved for
+  // the presence layer (Phase 2); v1/user turns omit it.
+  proactive?: boolean;
 }
 
 interface ThreadEntry {
