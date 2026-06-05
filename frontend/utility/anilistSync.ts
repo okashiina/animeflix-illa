@@ -54,6 +54,7 @@ const LIST_Q = /* GraphQL */ `
           mediaId
           status
           progress
+          updatedAt
           media {
             episodes
           }
@@ -272,6 +273,7 @@ interface ListEntry {
   mediaId: number;
   status?: string | null;
   progress?: number | null;
+  updatedAt?: number | null; // unix seconds; the AniList entry's own last edit
   media?: { episodes?: number | null } | null;
 }
 interface ListData {
@@ -319,7 +321,10 @@ export const pullAndMerge = async (session: AniListSession): Promise<void> => {
         // status change for this title (then local wins until it's pushed).
         if (status && !meta.dirty[m]) setExplicitStatus(m, status);
         if (typeof e.progress === 'number' && e.progress > 0) {
-          mergeWatchedUpTo(m, e.progress, episodes);
+          // Carry AniList's real edit time so a pulled title sorts by when it
+          // was actually watched, not the moment of the pull (which used to
+          // stamp every synced entry as "just now" and flood Continue Watching).
+          mergeWatchedUpTo(m, e.progress, episodes, (e.updatedAt ?? 0) * 1000);
         }
       })
     );

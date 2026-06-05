@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { getAnimeByIds } from '@animeflix/api';
 import { AnimeInfoFragment } from '@animeflix/api/aniList';
 import { NextSeo } from 'next-seo';
 
@@ -9,6 +8,7 @@ import Card from '@components/anime/Card';
 import Header from '@components/Header';
 import progressBar from '@components/Progress';
 import useWatchlist from '@hooks/useWatchlist';
+import { getAllAnimeByIds } from '@utility/animeByIds';
 import { type AniStatus, effectiveStatus } from '@utility/listStatus';
 
 type Tab = 'all' | AniStatus;
@@ -43,15 +43,10 @@ const Watchlist = () => {
     if (list.length === 0) {
       setMedia([]);
     } else {
-      getAnimeByIds({ perPage: 50, page: 1, ids: list })
-        .then((data) => {
-          if (cancelled) return;
-          const byId: Record<number, AnimeInfoFragment> = {};
-          (data.Page?.media ?? []).forEach((anime) => {
-            if (anime) byId[anime.id] = anime;
-          });
-          // Preserve the watchlist's most-recent-first ordering.
-          setMedia(list.map((id) => byId[id]).filter(Boolean));
+      // Already ordered to match `list` (most-recent-first), no 50-cap.
+      getAllAnimeByIds(list)
+        .then((resolved) => {
+          if (!cancelled) setMedia(resolved);
         })
         .catch(() => undefined);
     }

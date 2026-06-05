@@ -1,12 +1,12 @@
 import { GetServerSideProps, InferGetServerSidePropsType } from 'next';
 import { useRouter } from 'next/router';
 
-import { request } from 'graphql-request';
 import { NextSeo } from 'next-seo';
 
 import Card from '@components/anime/Card';
 import Header from '@components/Header';
 import progressBar from '@components/Progress';
+import { ANILIST_ENDPOINT, requestWithRetry } from '@utility/anilist';
 
 // ---------------------------------------------------------------------------
 // AniList GraphQL (fetched directly in getServerSideProps — no auth needed).
@@ -171,9 +171,10 @@ export const getServerSideProps: GetServerSideProps<BrowseProps> = async (
   let currentPage = page;
 
   try {
-    // graphql-request (not global fetch) so this works on the Node 16 runtime.
-    const json = await request<BrowseData>(
-      'https://graphql.anilist.co',
+    // graphql-request (not global fetch) so this works on the Node 16 runtime;
+    // retry on AniList 429 so a transient rate-limit doesn't blank the grid.
+    const json = await requestWithRetry<BrowseData>(
+      ANILIST_ENDPOINT,
       BROWSE_QUERY,
       variables
     );

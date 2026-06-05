@@ -2,11 +2,11 @@ import { GetServerSideProps, InferGetServerSidePropsType } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 
-import { request } from 'graphql-request';
 import { NextSeo } from 'next-seo';
 
 import Header from '@components/Header';
 import progressBar from '@components/Progress';
+import { ANILIST_ENDPOINT, requestWithRetry } from '@utility/anilist';
 import { base64SolidImage } from '@utility/image';
 
 // ---------------------------------------------------------------------------
@@ -91,9 +91,10 @@ export const getServerSideProps: GetServerSideProps<
   let schedules: AiringSchedule[] = [];
 
   try {
-    // graphql-request (not global fetch) so this works on the Node 16 runtime.
-    const json = await request<ScheduleData>(
-      'https://graphql.anilist.co',
+    // graphql-request (not global fetch) so this works on the Node 16 runtime;
+    // retry on AniList 429 so a transient rate-limit doesn't blank the schedule.
+    const json = await requestWithRetry<ScheduleData>(
+      ANILIST_ENDPOINT,
       SCHEDULE_QUERY,
       { airingAtGreater: now, airingAtLesser: weekFromNow }
     );
