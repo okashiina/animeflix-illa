@@ -176,8 +176,17 @@ export function listProgressIds(): number[] {
  * Merge a remote "episodes completed" count (AniList progress) into the local
  * entry: marks 1..n watched (union with existing) and lifts `ep` to at least n.
  * Used one-way when pulling an AniList list. Keeps local sec/dur resume.
+ *
+ * `remoteUpdatedAt` (ms) is the AniList entry's own last-edit time. Recency is
+ * the max of the local and remote timestamps, so a pulled title sorts by when it
+ * was really watched (not the pull moment) while a newer local watch still wins.
  */
-export function mergeWatchedUpTo(id: number, n: number, total?: number): void {
+export function mergeWatchedUpTo(
+  id: number,
+  n: number,
+  total?: number,
+  remoteUpdatedAt?: number
+): void {
   if (n <= 0) return;
   ensureMigrated();
   store.update((prev) => {
@@ -185,6 +194,8 @@ export function mergeWatchedUpTo(id: number, n: number, total?: number): void {
     const set = new Set(cur?.watched ?? []);
     for (let e = 1; e <= n; e += 1) set.add(e);
     const watched = Array.from(set).sort((a, b) => a - b);
+    const updatedAt =
+      Math.max(cur?.updatedAt ?? 0, remoteUpdatedAt ?? 0) || Date.now();
     return {
       ...prev,
       [id]: {
@@ -193,7 +204,7 @@ export function mergeWatchedUpTo(id: number, n: number, total?: number): void {
         dur: cur?.dur ?? 0,
         total: total || cur?.total || 0,
         watched,
-        updatedAt: cur?.updatedAt ?? Date.now(),
+        updatedAt,
       },
     };
   });

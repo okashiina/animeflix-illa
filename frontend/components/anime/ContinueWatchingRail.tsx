@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { getAnimeByIds } from '@animeflix/api';
 import { AnimeInfoFragment } from '@animeflix/api/aniList';
 
 import ContinueWatchingCard from '@components/anime/ContinueWatchingCard';
 import useWatchHistory from '@hooks/useWatchHistory';
+import { getAllAnimeByIds } from '@utility/animeByIds';
 
 const ContinueWatchingRail: React.FC = () => {
   const items = useWatchHistory();
@@ -24,13 +24,14 @@ const ContinueWatchingRail: React.FC = () => {
     let cancelled = false;
 
     if (ids.length > 0) {
-      getAnimeByIds({ perPage: 30, page: 1, ids })
-        .then((data) => {
+      // No 30-cap: resolve every in-progress title so a large synced list
+      // doesn't crowd out (or drop) the genuinely most-recent watches.
+      getAllAnimeByIds(ids)
+        .then((media) => {
           if (cancelled) return;
-          const media = data.Page?.media ?? [];
           const next: Record<number, AnimeInfoFragment> = {};
           media.forEach((anime) => {
-            if (anime) next[anime.id] = anime;
+            next[anime.id] = anime;
           });
           setAnimeById(next);
         })
