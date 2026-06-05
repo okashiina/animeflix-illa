@@ -14,13 +14,15 @@ import HlsPlayer, { type Subtitle } from './HlsPlayer';
 
 const SOURCE_SERVICE = process.env.NEXT_PUBLIC_SOURCE_SERVICE_URL;
 
-// Direct-pipeline server choice. 'auto' = resolver's fallback chain; the others
-// force one provider so the user can test it (AllAnime CF-solves, so it's slower).
+// Direct-pipeline server choice. 'auto' = resolver's fallback chain (AllAnime first,
+// AnimePahe as the automatic fallback); the others force one provider. AllAnime is the
+// primary pick (sharpest picture) but CF-solves, so it starts a beat slower; AnimePahe
+// (HLS) is faster if you want an instant start.
 const PROVIDER_PREF_KEY = 'kessoku.source.provider';
 const DIRECT_PROVIDERS = [
   { id: 'auto', label: 'Auto' },
-  { id: 'animepahe', label: 'AnimePahe' },
   { id: 'allanime', label: 'AllAnime' },
+  { id: 'animepahe', label: 'AnimePahe' },
 ] as const;
 
 interface Source {

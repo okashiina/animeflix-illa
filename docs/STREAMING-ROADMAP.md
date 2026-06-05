@@ -125,8 +125,13 @@ Railway datacenter IPs are heavily challenged. Options, cheapest→most robust:
   (key `SHA256("Xot36i3lK3:v1")`) + Referer `youtu-chan.com`; reliable source is its
   fast4speed CDN **direct MP4** (hardsub, Referer-gated) served via the new **`/file`
   Range proxy** (`src/fileProxy.ts`); player got a native-`<video>` path for non-HLS.
-  Full method in [ALLANIME-PROVIDER.md](ALLANIME-PROVIDER.md) §0. AnimePahe (HLS, fast)
-  stays primary; AllAnime is the coverage/dub fallback (`PROVIDERS=animepahe,allanime`).
+  Full method in [ALLANIME-PROVIDER.md](ALLANIME-PROVIDER.md) §0. **Provider-order
+  decision (2026-06-05): AllAnime is now PRIMARY** (`PROVIDERS=allanime,animepahe`) by
+  user preference — best picture + freshest airing/dub — with AnimePahe (HLS, fast) as
+  the automatic fallback. Trade-off: ~45 s CF-solve cold start per new title (then cached
+  15 min) and a full ~400 MB MP4 (no ABR); swap back to `animepahe,allanime` for the
+  faster default. The frontend server picker lists AllAnime first; Auto resolves the
+  chain in this order.
 - **Phase 3 — Subtitles — BUILT & VERIFIED (2026-06-03).** Indonesian (subdl) +
   Japanese (Jimaku) external WebVTT tracks: `source-service/src/subtitles/*`
   resolves + episode-matches, downloads, unzips, converts ASS/SRT→VTT (LRU-cached,
