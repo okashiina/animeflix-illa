@@ -12,6 +12,47 @@ import { request } from 'graphql-request';
 
 export const ANILIST_ENDPOINT = 'https://graphql.anilist.co';
 
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+// AniList rate-limits aggressively (HTTP 429, currently a degraded ~30/min). A
+// single 429 on these server-side fetches used to blank the whole page (the
+// callers catch and fall back to empty rails). Retry a rate-limited request a
+// few times with backoff — honouring `Retry-After` when AniList sends it — so a
+// transient limit doesn't wipe Home / the splash. Non-429 errors rethrow at once.
+const isRateLimited = (err: unknown): boolean =>
+  (err as { response?: { status?: number } } | undefined)?.response?.status ===
+  429;
+
+const retryAfterMs = (err: unknown): number | null => {
+  const headers = (
+    err as { response?: { headers?: { get?: (k: string) => string | null } } }
+  )?.response?.headers;
+  const raw = headers?.get?.('Retry-After');
+  const secs = raw ? Number(raw) : NaN;
+  return Number.isFinite(secs) ? secs * 1000 : null;
+};
+
+export const requestWithRetry = async <T>(
+  endpoint: string,
+  query: string,
+  variables?: Record<string, unknown>,
+  retries = 3
+): Promise<T> => {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      return await request<T>(endpoint, query, variables);
+    } catch (err) {
+      if (!isRateLimited(err) || attempt >= retries) throw err;
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(retryAfterMs(err) ?? 1500 * (attempt + 1));
+    }
+  }
+};
+
 /** Poster-card shape: matches the fields Card/Section read. */
 export interface MediaInfo {
   id: number;
@@ -177,7 +218,7 @@ export const fetchHomeData = async (): Promise<HomeData> => {
   const { now, weekFromNow } = weekWindow();
 
   try {
-    const data = await request<RawHome>(ANILIST_ENDPOINT, HOME_QUERY, {
+    const data = await requestWithRetry<RawHome>(ANILIST_ENDPOINT, HOME_QUERY, {
       season,
       seasonYear,
       airingAtGreater: now,
@@ -320,12 +361,16 @@ export const fetchSplashData = async (): Promise<SplashData> => {
   const { now, weekFromNow } = weekWindow();
 
   try {
-    const data = await request<RawSplash>(ANILIST_ENDPOINT, SPLASH_QUERY, {
-      season,
-      seasonYear,
-      airingAtGreater: now,
-      airingAtLesser: weekFromNow,
-    });
+    const data = await requestWithRetry<RawSplash>(
+      ANILIST_ENDPOINT,
+      SPLASH_QUERY,
+      {
+        season,
+        seasonYear,
+        airingAtGreater: now,
+        airingAtLesser: weekFromNow,
+      }
+    );
 
     const trending = data.trending?.media ?? [];
     const popular = data.popular?.media ?? [];
