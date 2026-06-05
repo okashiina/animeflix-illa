@@ -10,6 +10,12 @@ import { ChatAlt2Icon } from '@heroicons/react/outline';
 
 import { type SkipMarkers } from '@utility/aniskip';
 import { registerAiredSource } from '@utility/companionContext';
+import {
+  type PlayerHandle,
+  emitPlayerEvent,
+  registerPlayerHandle,
+  subscribePlayerEvent,
+} from '@utility/playerBus';
 import { getEntry, markWatched, savePosition } from '@utility/progress';
 
 // Our own player chrome for the self-hosted (Option B) HLS stream. Native
@@ -62,6 +68,9 @@ const CAP_SIZES: { k: string; css: string }[] = [
   { k: 'XL', css: 'clamp(22px, 3.8cqw, 88px)' },
 ];
 const PREFS_KEY = 'kessoku.player.v2';
+// One-time cue that the companion is reachable from fullscreen (the dock exists
+// but is undiscovered). Bumping the suffix re-shows it for everyone.
+const HINT_KEY = 'kessoku.player.hint.v1';
 const HIDE_MS = 2600;
 
 type CapColor = 'white' | 'yellow';
@@ -373,6 +382,9 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   // Fullscreen companion dock (YouTube-theater). Only meaningful while
   // fullscreen; the toggle button is hidden otherwise.
   const [chatOpen, setChatOpen] = useState(false);
+  // One-time "your companion is still here in fullscreen" cue on the dock toggle.
+  const [showHint, setShowHint] = useState(false);
+  const hintFired = useRef(false);
   const [subIdx, setSubIdx] = useState(-1);
   const [cueText, setCueText] = useState('');
   // Auto-next: dismissed for THIS episode, and a guard so we only advance once.
@@ -718,6 +730,131 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
     });
     return () => registerAiredSource(null);
   }, [subIdx, subtitles.length]);
+
+  // ---- Player bus. One handle for the whole mounted player: frame capture (the
+  // companion's vision), imperative play/pause/seek, and re-emitted native
+  // events (co-watch sync). Built once from the stable <video> node. Only the
+  // direct player registers — on embed there is no handle and both features
+  // gate themselves off. (Attach-once; the closed-over `v` is the same node for
+  // this mount's life.) ----
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return undefined;
+
+    // Tag events caused by our own play/pause/seek so sync consumers don't echo
+    // a remote action back to the room. The media element fires play/pause/
+    // seeked asynchronously, so a short time window is more reliable than a flag.
+    let programmaticUntil = 0;
+    const markProgrammatic = () => {
+      programmaticUntil = performance.now() + 400;
+    };
+    const isProgrammatic = () => performance.now() < programmaticUntil;
+
+    const captureFrame = (): string | null => {
+      try {
+        if (!v.videoWidth || !v.videoHeight) return null;
+        const long = Math.max(v.videoWidth, v.videoHeight);
+        const scale = long > 512 ? 512 / long : 1;
+        const cw = Math.max(1, Math.round(v.videoWidth * scale));
+        const ch = Math.max(1, Math.round(v.videoHeight * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = cw;
+        canvas.height = ch;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.drawImage(v, 0, 0, cw, ch);
+        return canvas.toDataURL('image/jpeg', 0.6);
+      } catch {
+        // Tainted canvas (a source without CORS) or frame not ready.
+        return null;
+      }
+    };
+
+    const handle: PlayerHandle = {
+      captureFrame,
+      play: () => {
+        markProgrammatic();
+        v.play().catch(() => undefined);
+      },
+      pause: () => {
+        markProgrammatic();
+        v.pause();
+      },
+      seek: (t) => {
+        markProgrammatic();
+        v.currentTime = Math.min(Math.max(t, 0), v.duration || t);
+      },
+      getCurrentTime: () => v.currentTime,
+      isPaused: () => v.paused,
+      on: (evt, cb) => subscribePlayerEvent(evt, cb),
+    };
+
+    const onBusPlay = () =>
+      emitPlayerEvent('play', {
+        time: v.currentTime,
+        programmatic: isProgrammatic(),
+      });
+    const onBusPause = () =>
+      emitPlayerEvent('pause', {
+        time: v.currentTime,
+        programmatic: isProgrammatic(),
+      });
+    const onBusSeek = () =>
+      emitPlayerEvent('seek', {
+        time: v.currentTime,
+        programmatic: isProgrammatic(),
+      });
+    // Heartbeat for late-join re-anchoring; ~1Hz (sync itself is event-driven).
+    let lastTick = 0;
+    const onBusTick = () => {
+      const now = performance.now();
+      if (now - lastTick < 900) return;
+      lastTick = now;
+      emitPlayerEvent('timeupdate', {
+        time: v.currentTime,
+        programmatic: false,
+      });
+    };
+
+    v.addEventListener('play', onBusPlay);
+    v.addEventListener('pause', onBusPause);
+    v.addEventListener('seeked', onBusSeek);
+    v.addEventListener('timeupdate', onBusTick);
+    registerPlayerHandle(handle);
+    return () => {
+      v.removeEventListener('play', onBusPlay);
+      v.removeEventListener('pause', onBusPause);
+      v.removeEventListener('seeked', onBusSeek);
+      v.removeEventListener('timeupdate', onBusTick);
+      registerPlayerHandle(null);
+    };
+    // Attach once per mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // One-time fullscreen hint: the first time the viewer is fullscreen with a
+  // companion available (and the dock closed), pulse the dock toggle and float a
+  // short tip, then never again. Persisted so it survives reloads.
+  useEffect(() => {
+    if (hintFired.current) return undefined;
+    if (!isFs || !companionSlot || chatOpen) return undefined;
+    let seen = false;
+    try {
+      seen = Boolean(window.localStorage.getItem(HINT_KEY));
+    } catch {
+      /* ignore */
+    }
+    hintFired.current = true;
+    if (seen) return undefined;
+    try {
+      window.localStorage.setItem(HINT_KEY, '1');
+    } catch {
+      /* ignore */
+    }
+    setShowHint(true);
+    const id = setTimeout(() => setShowHint(false), 5200);
+    return () => clearTimeout(id);
+  }, [isFs, chatOpen, companionSlot]);
 
   // Fullscreen state sync. Refocus the stage on enter so keyboard keeps working.
   useEffect(() => {
@@ -1485,15 +1622,42 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
 
                 {/* Companion dock toggle — only useful in fullscreen, where the
                   page right-rail isn't visible. Off fullscreen the companion
-                  lives in the right-rail tab, so we hide this. */}
+                  lives in the right-rail tab, so we hide this. A one-time hint
+                  pulses here on first fullscreen so the dock gets discovered. */}
                 {companionSlot && isFs && (
-                  <CtrlButton
-                    label={chatOpen ? 'Hide companion' : 'Show companion'}
-                    active={chatOpen}
-                    onClick={() => setChatOpen((c) => !c)}
-                  >
-                    <ChatAlt2Icon className="h-[22px] w-[22px]" />
-                  </CtrlButton>
+                  <div className="relative">
+                    {showHint && (
+                      <div
+                        role="status"
+                        className="absolute bottom-full right-0 z-30 mb-3 w-56 animate-rise rounded-xl border border-accent/40 bg-canvas-2/95 p-3 text-left shadow-lift backdrop-blur-md"
+                      >
+                        <p className="text-sm font-semibold text-fg">
+                          Still here, side stage
+                        </p>
+                        <p className="mt-0.5 text-xs leading-relaxed text-muted">
+                          Fullscreen and all. Tap to chat with your companion
+                          about the scene you&apos;re on.
+                        </p>
+                        <span className="absolute right-5 top-full -mt-px h-2.5 w-2.5 -translate-y-1/2 rotate-45 border-b border-r border-accent/40 bg-canvas-2" />
+                      </div>
+                    )}
+                    {showHint && (
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-1 animate-ping rounded-full bg-accent/40"
+                      />
+                    )}
+                    <CtrlButton
+                      label={chatOpen ? 'Hide companion' : 'Show companion'}
+                      active={chatOpen || showHint}
+                      onClick={() => {
+                        setChatOpen((c) => !c);
+                        setShowHint(false);
+                      }}
+                    >
+                      <ChatAlt2Icon className="h-[22px] w-[22px]" />
+                    </CtrlButton>
+                  </div>
                 )}
 
                 <CtrlButton

@@ -9,7 +9,7 @@
     "url": "https://github.com/chirag-droid"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3000",
     "lint": "next lint",
     "build": "next build",
     "start": "next start"
@@ -21,6 +21,7 @@
     "@reduxjs/toolkit": "^1.8.2",
     "@vime/core": "^5.3.0",
     "@vime/react": "^5.3.0",
+    "ably": "^2.21.0",
     "framer-motion": "^11.0.0",
     "graphql-request": "^4.3.0",
     "hls.js": "^1.5.18",

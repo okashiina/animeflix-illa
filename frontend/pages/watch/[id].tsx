@@ -9,7 +9,7 @@ import {
   AnimeInfoFragment,
   MediaType,
 } from '@animeflix/api/aniList';
-import { SparklesIcon } from '@heroicons/react/outline';
+import { SparklesIcon, UserGroupIcon } from '@heroicons/react/outline';
 import { NextSeo } from 'next-seo';
 
 import RelatedSection, {
@@ -22,8 +22,10 @@ import progressBar from '@components/Progress';
 import RecommendationCard from '@components/watch/Card';
 import CompanionChat from '@components/watch/CompanionChat';
 import Episode from '@components/watch/Episode';
+import RoomUI from '@components/watch/RoomUI';
 import SourcePlayer from '@components/watch/SourcePlayer';
 import WatchControls from '@components/watch/WatchControls';
+import { useSyncPlayer } from '@hooks/useSyncPlayer';
 import { setAnime } from '@slices/anime';
 import { setEpisode } from '@slices/episode';
 import { setTotalEpisodes } from '@slices/gogoApi';
@@ -37,6 +39,17 @@ interface WatchProps {
   recommended: (AnimeInfoFragment & AnimeBannerFragment)[];
   related: RelationItem[];
 }
+
+// Read a co-watch room code off the URL once, at render time, before the
+// episode-sync effect rewrites the URL (which would otherwise drop ?room=).
+const readRoomParam = (): string | undefined => {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    return new URLSearchParams(window.location.search).get('room') || undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 export const getServerSideProps: GetServerSideProps<WatchProps> = async (
   context
@@ -99,6 +112,12 @@ const Watch = ({
   ]);
   const routerRef = useRef(router);
 
+  // Co-watch (Teleparty): captured render-time so the URL rewrite below keeps it.
+  const [roomCode] = useState<string | undefined>(readRoomParam);
+  // Run the playback-sync engine page-level so a room stays in lockstep no matter
+  // which right-rail tab is showing.
+  useSyncPlayer();
+
   useEffect(() => {
     // only run when the initial episode value was not supplied
     if (routerRef.current.query.episode) return;
@@ -107,19 +126,25 @@ const Watch = ({
     dispatch(setEpisode(getResumeEpisode(animeId)));
   }, [animeId, dispatch]);
 
-  // update the router url
+  // update the router url (preserve ?room= so an invite link stays shareable)
   useEffect(() => {
     routerRef.current.replace(
       {
         pathname: '/watch/[id]',
-        query: { id: animeId, episode },
+        query: {
+          id: animeId,
+          episode,
+          ...(roomCode ? { room: roomCode } : {}),
+        },
       },
-      `/watch/${animeId}/?episode=${episode}`,
+      `/watch/${animeId}/?episode=${episode}${
+        roomCode ? `&room=${roomCode}` : ''
+      }`,
       {
         shallow: true,
       }
     );
-  }, [animeId, episode]);
+  }, [animeId, episode, roomCode]);
 
   // total episode count comes from AniList: finished anime expose `episodes`,
   // while currently-airing ones expose the next airing episode instead.
@@ -134,26 +159,51 @@ const Watch = ({
   // get data about next airing episode
   const { nextAiringEpisode } = anime;
 
-  // Right rail switches between recommendations and the AI watch companion.
-  const [asideTab, setAsideTab] = useState<'recommended' | 'companion'>(
-    'recommended'
-  );
+  // Right rail switches between recommendations, the AI companion, and the
+  // co-watch room.
+  const [asideTab, setAsideTab] = useState<
+    'recommended' | 'companion' | 'room'
+  >('recommended');
+  // Land on the room tab when arriving through an invite link (post-hydration so
+  // SSR markup stays consistent).
+  useEffect(() => {
+    if (roomCode) setAsideTab('room');
+  }, [roomCode]);
 
   // Low-spoiler cast roster for the companion: names + role + JP voice actor
-  // only, NO bios or arcs, capped to the top ~10. This lets it answer "who was
-  // that again?" without inventing anything or leaking later-arc spoilers. The
-  // watchPage query returns AnimeCast (`anime.characters`), but the page prop
-  // type is AnimeInfo & AnimeBanner, so read it through a narrow local cast.
+  // only, NO bios or arcs, capped to the top ~12. This lets it answer "who was
+  // that again?" without inventing anything or leaking later-arc spoilers. We
+  // also carry the AniList ids (character + VA) + images so the companion's
+  // lookup tools resolve "who voices X" by id without a search, and so the
+  // entity cards have faces. The watchPage query returns AnimeCast
+  // (`anime.characters`/`anime.studios`), but the page prop type is
+  // AnimeInfo & AnimeBanner, so read it through a narrow local cast.
   const cast = (
     anime as unknown as {
       characters?: {
         edges?:
           | ({
               role?: string | null;
-              node?: { name?: { full?: string | null } | null } | null;
+              node?: {
+                id?: number | null;
+                name?: { full?: string | null } | null;
+                image?: { medium?: string | null } | null;
+              } | null;
               voiceActors?:
-                | ({ name?: { full?: string | null } | null } | null)[]
+                | ({
+                    id?: number | null;
+                    name?: { full?: string | null } | null;
+                    image?: { medium?: string | null } | null;
+                  } | null)[]
                 | null;
+            } | null)[]
+          | null;
+      } | null;
+      studios?: {
+        edges?:
+          | ({
+              isMain?: boolean | null;
+              node?: { id?: number | null; name?: string | null } | null;
             } | null)[]
           | null;
       } | null;
@@ -164,12 +214,54 @@ const Watch = ({
     .map((edge) => {
       const name = edge?.node?.name?.full;
       if (!name) return null;
-      const va = edge?.voiceActors?.[0]?.name?.full || undefined;
+      const va = edge?.voiceActors?.[0];
       const role = edge?.role ? edge.role.toLowerCase() : undefined;
-      return { name, role, va };
+      return {
+        name,
+        role,
+        va: va?.name?.full || undefined,
+        characterId: edge?.node?.id ?? undefined,
+        vaId: va?.id ?? undefined,
+        characterImage: edge?.node?.image?.medium ?? undefined,
+        vaImage: va?.image?.medium ?? undefined,
+      };
     })
     .filter((r): r is NonNullable<typeof r> => Boolean(r))
-    .slice(0, 10);
+    .slice(0, 18);
+
+  const studios = (
+    (
+      anime as unknown as {
+        studios?: {
+          edges?:
+            | ({
+                isMain?: boolean | null;
+                node?: { id?: number | null; name?: string | null } | null;
+              } | null)[]
+            | null;
+        } | null;
+      }
+    ).studios?.edges ?? []
+  )
+    .map((edge) =>
+      edge?.node?.id && edge.node.name
+        ? {
+            id: edge.node.id,
+            name: edge.node.name,
+            isMain: Boolean(edge.isMain),
+          }
+        : null
+    )
+    .filter((s): s is NonNullable<typeof s> => Boolean(s));
+
+  // Earlier parts the viewer watched to get here (prequel / parent story). Tells
+  // the companion this is a continuation, so returning characters + prior-season
+  // events are already-watched and safe to discuss (a sequel shouldn't make it
+  // forget who the leads are).
+  const prequels = related
+    .filter((r) => r.relationType === 'PREQUEL' || r.relationType === 'PARENT')
+    .map((r) => r.node.title.english || r.node.title.romaji)
+    .filter((t): t is string => Boolean(t));
 
   // Seed the companion with what it is allowed to know about the show up front.
   // The synopsis is HTML-stripped here; the per-moment subtitle window is pulled
@@ -182,7 +274,10 @@ const Watch = ({
       .trim(),
     genres: anime.genres ?? [],
     format: anime.format || '',
+    year: anime.startDate?.year ?? undefined,
     roster,
+    studios,
+    prequels,
   };
 
   return (
@@ -322,9 +417,21 @@ const Watch = ({
                 <SparklesIcon className="h-3.5 w-3.5" />
                 Companion
               </button>
+              <button
+                type="button"
+                onClick={() => setAsideTab('room')}
+                className={`flex items-center gap-1 rounded-full px-3 py-1 transition ${
+                  asideTab === 'room'
+                    ? 'bg-aurora text-accent-ink shadow-glow'
+                    : 'text-muted hover:text-fg'
+                }`}
+              >
+                <UserGroupIcon className="h-3.5 w-3.5" />
+                Together
+              </button>
             </div>
 
-            {asideTab === 'recommended' ? (
+            {asideTab === 'recommended' && (
               <div className="space-y-2">
                 {recommended.map((recommendation) => (
                   <RecommendationCard
@@ -333,12 +440,23 @@ const Watch = ({
                   />
                 ))}
               </div>
-            ) : (
+            )}
+            {asideTab === 'companion' && (
               <CompanionChat
                 seed={companionSeed}
                 animeId={animeId}
                 episode={episode}
                 total={totalEpisodes}
+              />
+            )}
+            {asideTab === 'room' && (
+              <RoomUI
+                initialCode={roomCode}
+                companion={{
+                  seed: companionSeed,
+                  episode,
+                  total: totalEpisodes,
+                }}
               />
             )}
           </aside>
