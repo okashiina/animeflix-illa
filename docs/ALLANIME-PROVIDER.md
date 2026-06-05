@@ -56,9 +56,11 @@ AES decrypt (`{"episode":{"sourceUrls":[…]}}`) → fast4speed MP4 → `/file` 
 path is wired + typechecks, but needs a real browser to confirm it renders).
 
 **Trade-offs:** AllAnime CF-solves on each cold resolve (~45 s, then cached 15 min) and
-streams a full ~400 MB MP4 through the container (no adaptive bitrate). So it's set as
-the **fallback** (`PROVIDERS=animepahe,allanime`); AnimePahe (HLS, fast) stays primary.
-Flip to `allanime,animepahe` to prefer AllAnime (fresher airing / dub).
+streams a full ~400 MB MP4 through the container (no adaptive bitrate). Despite that it
+is now the **primary** (`PROVIDERS=allanime,animepahe`) by user preference (2026-06-05) —
+best picture + freshest airing/dub coverage — with AnimePahe (HLS, fast, lighter) as the
+automatic fallback when AllAnime can't resolve a title. Swap back to `animepahe,allanime`
+for the faster cold-start default.
 
 ---
 
