@@ -436,12 +436,15 @@ before any of it earns a phase number.
   selectable tone), the architecture, and the build gate. The model + hosting research it builds
   on stays in D/E below.
 
-**C. Watch together (synced co-watch rooms).**
+**C. Watch together (synced co-watch rooms). → Promoted to §12 (user request, 2026-06-05).**
 - Pitch: a shared room where friends watch in sync (play / pause / seek propagated)
   with a side chat. The companion from (B) could optionally sit in the room too.
 - Cost shape: needs a realtime layer (websockets, or a managed pub-sub) plus
   playback-sync logic. Doable, but it is its own build — sequence it after the core
   player and sources are solid, not before.
+- **Update 2026-06-05:** the user explicitly asked for this ("kek teleparty, dua atau lebih
+  user nonton di server yang sama, klo satu pause semuanya ke pause"). The concrete design,
+  hard parts, and phasing now live in **§12** below.
 
 **D. Self-hosting the LLM (the shared enabler for A–C).**
 - Source of the idea (now confirmed): **Odysseus** by `pewdiepie-archdaemon` — repo
@@ -559,6 +562,45 @@ model routing — when the viewer opts in (18+), unhinged requests route to an o
 OpenRouter model (`COMPANION_UNCENSORED_*` env), falling back to the default provider if that free
 pool 429s, so it always replies. Active default provider is now **Groq**
 (`llama-3.3-70b-versatile`, free + fast); Gemini stays a base+model env swap.
+
+**Round-3 spoiler / hallucination hardening shipped 2026-06-05 (the "ep-9 incident").** A friend
+watching *Class de 2-banme ni Kawaii Onnanoko to Tomodachi ni Natta* (English: *I Made Friends with
+the Second Prettiest Girl in My Class*) episode 9 reported the companion **spoiled** him. We
+researched the actual show (Wikipedia + the Kuranika Fandom + the Moe Sucks ep-6 and Fandom Post
+ep-9 reviews) to check. Verdict: it did **not** leak future canon — it **confabulated**, and stated
+the made-up details with full confidence. It invented a cold/scary father "Sora Asanagi" for Umi, a
+stern silent father "Masaki Maehara" for Maki, a non-existent younger brother "Itsuki" who'd "been
+there since episode 1", a "naggy" mother, and a wrong reason ("feels unpopular") for skipping the
+Christmas party. Ground truth: Umi's father is **Daichi Asanagi** (warm, friendly); "Sora" and
+"Masaki" are the **mothers**; "Itsuki Maehara" is Maki's estranged **father**, not a brother (he
+first appears ~ep 6–7); and Maki is **male**. The real family arc *is* on-screen by ep 8–9, so the
+broad topic was fair game — but every specific (name, role, gender, motive) was fabricated.
+
+The lesson, and the design correction: **to the viewer a confident invented detail is
+indistinguishable from a spoiler.** Naming a relationship they have not seen reads as "you just told
+me something the show hasn't" whether the detail is real-but-future or pure invention. So spoiler
+safety is not only about the subtitle window's hard bound (which held — the model never received
+future lines); it is also about the model refusing to *guess* off-window. Three changes
+(`frontend/pages/api/companion.ts`, `scripts/companion-eval/{fixtures.json,eval.mjs}`):
+
+1. **Prompt.** The hard rules now (a) extend "treat past the edge as unknown" to cover *who people
+   are and how they are related*, not just future plot; (b) state plainly that the cast list is
+   names + a generic role label + a voice actor and **nothing about relationships, personality, or
+   backstory**; (c) forbid stating or guessing any name / family tie / personality / motive that is
+   not in the already-shown lines, and forbid agreeing with a guess the viewer floats unless the
+   screen backs it; (d) tell it to answer "honestly I don't think we've actually been shown that
+   yet" and describe unknown characters by what just happened ("the guy at the door") instead of
+   inventing a name. The old "name the character who just spoke" line — which pushed it to always
+   produce a name — was softened to "when you actually know who that was."
+2. **Temperature.** Default-provider sampling dropped **0.85 → 0.6**. The companion's warmth lives
+   in the prompt; the extra heat mostly bought confident confabulation.
+3. **Eval.** New `classroom-confab-trap-ep9` fixture replays the exact failure on a *fake* show
+   (so any answer is measurable): Indonesian probes for an unseen parent's name, a non-existent
+   younger sibling, a mother's personality, and a motive, plus one *answerable* turn where the aired
+   line gives the real reason so the model is scored on grounding to it rather than to the viewer's
+   wrong guess. The judge rubric now scores an honest "haven't been shown that yet" **high**, not as
+   a specificity penalty. *Verified statically (tsc + next lint clean, fixtures parse); the live
+   behavioural lift still needs a run of `scripts/companion-eval` with a key, or an in-app chat.*
 
 **Future — "upscale the unhinged AI" (Option A, parked 2026-06-04).** The `:free` uncensored model
 (Dolphin Venice via OpenRouter) is a *shared* pool that rate-limits (429, `is_byok:false`), so today
@@ -688,3 +730,111 @@ anti-spoiler rule applies to all of them.
 
 > Skills for the build (not this round): persona / tone copy = `/brand-copywriter` + `/brand` +
 > `/stop-slop`; the chat-panel UI = `/impeccable` + `/ui-ux-pro-max` + `/frontend-design`.
+
+---
+
+## 12. Watch together (Teleparty-style synced co-watch) — REQUESTED 2026-06-05, not yet built
+
+Promoted from the §10-C parking lot on a direct user request: *"bikin fitur biar bisa kek teleparty,
+dua atau lebih user berbeda nonton di server yang sama, klo satu pause semuanya ke pause."* So the
+target is a shared room where two or more people watch the **same episode in lock-step**: anyone
+hits pause and it pauses for everyone, anyone seeks and everyone follows, with a side chat to talk
+while it plays. **Status: requested / design — not greenlit, not scheduled.** Sequence it *after* the
+core player and sources are stable (it is its own build, same call as §11c step 5).
+
+### 12a. The one hard constraint that shapes everything: which player
+
+We have two playback paths, and they behave oppositely for sync:
+
+- **Direct custom player (`HlsPlayer.tsx`)** — same-origin `<video>`, so JS can read and set
+  `currentTime`, `play()`, `pause()`. **Sync is possible here.** This is the only path co-watch can
+  actually drive, exactly like the companion's subtitle window (§11a-2): both features need a player
+  we control, and both are direct-player-only.
+- **Third-party embed iframe (`EmbedPlayer.tsx`)** — cross-origin. We **cannot** read or set the
+  embed's playback position from our page (browser same-origin policy), and most embed hosts expose
+  no postMessage control API. **Sync is effectively impossible on embeds.** Best we could do is sync
+  a *"start now"* countdown and trust everyone's local timer drift, which falls apart on the first
+  pause. So co-watch ships as a **direct-player-only** feature; in an embed room the UI should say so
+  rather than pretend to sync.
+
+Knock-on: today the direct player is served by the laptop source-service over Tailscale Funnel
+(up only when the laptop is on — see the share-testing memo). A watch party therefore inherits the
+same availability gate as solo direct-player watching: the source has to be reachable. Moving the
+source-service to an always-on VPS (§4 / §9 off-ramp) is what makes co-watch dependable, not a code
+change.
+
+### 12b. The realtime layer (the new infra this needs)
+
+Co-watch needs a **persistent bidirectional channel** between participants — something Next.js API
+routes on Railway do not give us (they are serverless, no long-lived sockets). Options, cheapest
+first:
+
+- **Managed pub/sub (recommended MVP):** Ably / Pusher / Supabase Realtime — all have a free tier
+  that covers friends-scale rooms, give presence + channels out of the box, and need **zero servers
+  to run**. Fastest path to a working room; revisit only if cost/scale ever bites.
+- **Our own WebSocket service:** a tiny `ws` (Node) or a Cloudflare Durable Object room server,
+  co-located with the source-service on the laptop/VPS box we already run. More control, no
+  third-party, but it is another always-on process to babysit. Pick this only if a managed tier's
+  limits or ToS get in the way.
+
+Either way the app stays provider-agnostic behind a thin client hook, the same posture as
+`/api/companion` being OpenAI-compatible: swap the realtime backend without touching the UI.
+
+### 12c. Sync model — symmetric control, drift-corrected
+
+The user's spec is **democratic, not host-only**: *anyone* pausing pauses *everyone*. Model the room
+as a small shared state and reconcile against it:
+
+```
+RoomState = { videoId, episode, paused: bool, positionSec, updatedAt, lastActorId }
+```
+
+- **Emit on intent, not on tick.** When a participant play/pause/seeks, broadcast
+  `{ type, positionSec, at }`. Do not stream `timeupdate` every frame (that is a feedback storm).
+- **Apply + drift-correct on receive.** On an incoming event, set paused state and, if
+  `|localTime - positionSec| > ~0.75s`, seek to match. A small tolerance stops constant micro-seeks
+  from network jitter.
+- **Loop guard.** Setting `currentTime`/`pause()` programmatically fires the same `seek`/`pause`
+  events locally — tag the player's own outbound events so an applied remote change does not echo
+  back out and ping-pong the room.
+- **Late join / heartbeat.** A joiner pulls the latest `RoomState` and seeks to
+  `positionSec + (now - updatedAt)` if playing. A low-frequency heartbeat (every few seconds)
+  re-anchors slow drift without the per-frame chatter.
+- **Buffering reality:** if one viewer stalls on a slow segment, decide the rule — soft (everyone
+  keeps going, the slow one catches up on the next event) is simpler than hard (a stall pauses the
+  room). MVP = soft; "wait for everyone" is a later toggle.
+
+### 12d. Rooms, identity, and the side chat
+
+- **Room = shareable code/link** (`/watch/[id]?room=ABCD` or a dedicated `/party/[code]`). Creating
+  a room from the watch page gives a copyable invite; opening the link joins.
+- **Identity:** AniList login already exists, so signed-in users get their handle/avatar for free;
+  friends without an account get a lightweight nickname prompt (no account wall — these are casual
+  friend sessions, per the share-testing memo). Presence shows who is in the room and who is
+  buffering.
+- **Side chat:** reuse the `CompanionChat` UI patterns (message list + composer, the same tokens) for
+  a human room chat. **Optional: the AI companion (§11) can sit in the room** — a shared persona
+  reacting alongside everyone, still bounded by the same spoiler-safe window (now the *slowest*
+  viewer's position, so it never gets ahead of anyone). That is the natural fusion of §11 + §12.
+
+### 12e. Phasing
+
+1. **MVP:** direct-player rooms, managed pub/sub, two-person symmetric play/pause/seek sync + a join
+   link. Prove two laptops stay in lock-step before adding anything.
+2. **Presence + side chat** (who's here, buffering state, human chat).
+3. **Companion-in-room** (the §11 persona shared, window pinned to the slowest viewer).
+4. **Robustness:** late-join re-anchor, buffering policy toggle, reconnect, embed rooms degrade to a
+   "start together" countdown with an honest "no auto-sync on embeds" notice.
+
+### 12f. Open decisions (settle at build time)
+
+- Realtime backend: managed (Ably/Pusher/Supabase) vs our own `ws`/Durable Object box.
+- Control policy: pure symmetric (anyone controls) vs an optional "host lock" for bigger rooms.
+- Buffering policy: soft catch-up vs hard "wait for everyone."
+- Identity floor: AniList-only vs anonymous nicknames allowed (likely allow nicknames for friends).
+- Availability: does this wait on the source-service moving to an always-on VPS (§4/§9)? Co-watch is
+  only as dependable as the direct player it drives.
+
+> Skills for the build (not this round): realtime / sync is backend — no UI skill gate; the room +
+> chat UI = `/impeccable` + `/ui-ux-pro-max` + `/frontend-design`; any room copy = `/brand-copywriter`
+> + `/brand` + `/stop-slop`.
