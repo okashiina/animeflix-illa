@@ -1,0 +1,144 @@
+// Thin wrapper over Ably for co-watch rooms, kept deliberately small and
+// provider-agnostic so the transport could be swapped later without touching the
+// room store, the sync engine, or the chat UI. Everything above this file speaks
+// in `RoomConnection`, never in Ably types.
+//
+// Ably is loaded with a dynamic import so its client only ships to browsers that
+// actually open a room (it stays out of the main watch bundle). Auth is via the
+// `/api/room/token` endpoint, so the Ably key never reaches the client.
+
+import type {
+  ClientOptions,
+  InboundMessage,
+  PresenceMessage,
+  RealtimeClient,
+} from 'ably';
+
+type RealtimeCtor = new (options: ClientOptions) => RealtimeClient;
+
+/** Per-member identity carried in presence. */
+export interface MemberData {
+  name: string;
+  avatar?: string;
+}
+
+export interface RoomMember {
+  clientId: string;
+  data: MemberData;
+}
+
+export interface RoomConnection {
+  clientId: string;
+  /** Fire-and-forget publish of a room event. */
+  publish: (event: string, data: unknown) => void;
+  /** Subscribe to a room event; returns an unsubscribe fn. */
+  subscribe: (
+    event: string,
+    cb: (data: unknown, fromClientId: string) => void
+  ) => () => void;
+  /** Announce/refresh our presence in the room. */
+  enter: (data: MemberData) => Promise<void>;
+  update: (data: MemberData) => Promise<void>;
+  /** Observe the live member list (fires on any join/leave/update). */
+  onMembers: (cb: (members: RoomMember[]) => void) => () => void;
+  /** Leave presence, detach, and close the connection. */
+  close: () => void;
+}
+
+const CHANNEL_PREFIX = 'kessoku:room:';
+
+let ctor: RealtimeCtor | null = null;
+const loadRealtime = async (): Promise<RealtimeCtor> => {
+  if (ctor) return ctor;
+  const mod = await import('ably');
+  // Tolerate either interop shape (named export vs CJS default) across bundlers.
+  const found =
+    (mod as unknown as { Realtime?: RealtimeCtor }).Realtime ??
+    (mod as unknown as { default?: { Realtime?: RealtimeCtor } }).default
+      ?.Realtime;
+  if (!found) throw new Error('ably: Realtime constructor not found');
+  ctor = found;
+  return found;
+};
+
+export const connectRoom = async (
+  roomId: string,
+  clientId: string
+): Promise<RoomConnection> => {
+  const Rt = await loadRealtime();
+  const client = new Rt({
+    authUrl: `/api/room/token?clientId=${encodeURIComponent(clientId)}`,
+    clientId,
+    // Don't deliver our own messages back to us — we apply local actions
+    // optimistically, so an echo would just be noise (and a sync feedback loop).
+    echoMessages: false,
+  });
+  const channel = client.channels.get(`${CHANNEL_PREFIX}${roomId}`);
+
+  const publish = (event: string, data: unknown): void => {
+    channel.publish(event, data).catch(() => undefined);
+  };
+
+  const subscribe = (
+    event: string,
+    cb: (data: unknown, fromClientId: string) => void
+  ): (() => void) => {
+    const listener = (msg: InboundMessage): void =>
+      cb(msg.data, msg.clientId ?? '');
+    channel.subscribe(event, listener);
+    return () => channel.unsubscribe(event, listener);
+  };
+
+  const readMembers = async (): Promise<RoomMember[]> => {
+    try {
+      const present = await channel.presence.get();
+      return present.map((p: PresenceMessage) => ({
+        clientId: p.clientId ?? '',
+        data: (p.data ?? { name: 'guest' }) as MemberData,
+      }));
+    } catch {
+      return [];
+    }
+  };
+
+  const onMembers = (cb: (members: RoomMember[]) => void): (() => void) => {
+    let alive = true;
+    const refresh = (): void => {
+      readMembers().then((m) => {
+        if (alive) cb(m);
+      });
+    };
+    const onPresence = (): void => refresh();
+    channel.presence.subscribe(onPresence);
+    refresh();
+    return () => {
+      alive = false;
+      channel.presence.unsubscribe(onPresence);
+    };
+  };
+
+  const enter = (data: MemberData): Promise<void> =>
+    channel.presence.enter(data);
+  const update = (data: MemberData): Promise<void> =>
+    channel.presence.update(data);
+
+  const close = (): void => {
+    try {
+      channel.presence.leave();
+    } catch {
+      /* already detached */
+    }
+    try {
+      channel.detach();
+    } catch {
+      /* ignore */
+    }
+    try {
+      client.close();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return { clientId, publish, subscribe, enter, update, onMembers, close };
+};
