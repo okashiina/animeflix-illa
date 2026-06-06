@@ -1,25 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
-  ChevronDownIcon,
   EyeIcon,
-  LockClosedIcon,
   PaperAirplaneIcon,
   SparklesIcon,
   XIcon,
 } from '@heroicons/react/outline';
 
 import CompanionCards from '@components/watch/companion/CompanionCards';
+import TonePicker from '@components/watch/companion/TonePicker';
 import type { CompanionCard, SseEvent } from '@utility/companion/types';
 import { getAiredContext } from '@utility/companionContext';
-import {
-  COMPANION_TONES,
-  setMature,
-  setTone,
-  toneLabel,
-  useCompanionPrefs,
-  type CompanionTone,
-} from '@utility/companionPrefs';
+import { useCompanionPrefs } from '@utility/companionPrefs';
 import {
   appendMessage,
   getThread,
@@ -99,8 +91,6 @@ const CompanionChat: React.FC<{
   const [configured, setConfigured] = useState<'unknown' | 'yes' | 'no'>(
     'unknown'
   );
-  const [toneOpen, setToneOpen] = useState(false);
-  const [confirmMature, setConfirmMature] = useState(false);
   // Vision (👁): the provider can see (Gemini) AND a direct player is mounted to
   // grab a frame from. `frame` is the staged still attached to the next turn.
   const [visionReady, setVisionReady] = useState(false);
@@ -399,23 +389,6 @@ const CompanionChat: React.FC<{
     }
   };
 
-  const pickTone = (id: CompanionTone, mature?: boolean): void => {
-    if (mature && !prefs.mature) {
-      setConfirmMature(true);
-      return;
-    }
-    setTone(id);
-    setToneOpen(false);
-    setConfirmMature(false);
-  };
-
-  const enableMature = (): void => {
-    setMature(true);
-    setTone('unhinged');
-    setToneOpen(false);
-    setConfirmMature(false);
-  };
-
   // The streaming bubble: a "looking it up" pill before any text, the typed
   // text with a cursor once it starts, or the initial three-dot wait.
   const renderDraft = (d: Draft): JSX.Element => {
@@ -470,99 +443,8 @@ const CompanionChat: React.FC<{
           </div>
         </div>
 
-        {/* Tone picker */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => {
-              setToneOpen((v) => !v);
-              setConfirmMature(false);
-            }}
-            className="flex items-center gap-1 rounded-full border border-line/60 px-2.5 py-1 text-xs font-semibold text-muted transition hover:border-accent/50 hover:text-fg"
-            aria-haspopup="menu"
-            aria-expanded={toneOpen}
-          >
-            {toneLabel(prefs.tone)}
-            <ChevronDownIcon className="h-3.5 w-3.5" />
-          </button>
-
-          {toneOpen && (
-            <>
-              <button
-                type="button"
-                aria-label="Close tone menu"
-                className="fixed inset-0 z-10 cursor-default"
-                onClick={() => {
-                  setToneOpen(false);
-                  setConfirmMature(false);
-                }}
-              />
-              <div className="absolute right-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-xl border border-line/60 bg-canvas-2 p-1 shadow-lift">
-                {COMPANION_TONES.map((t) => {
-                  const locked = Boolean(t.mature) && !prefs.mature;
-                  const active = prefs.tone === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => pickTone(t.id, t.mature)}
-                      className={`flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition ${
-                        active
-                          ? 'bg-surface text-fg'
-                          : 'text-muted hover:bg-surface/70 hover:text-fg'
-                      }`}
-                    >
-                      <span className="mt-0.5">
-                        {locked ? (
-                          <LockClosedIcon className="h-3.5 w-3.5 text-faint" />
-                        ) : (
-                          <span
-                            className={`block h-2 w-2 rounded-full ${
-                              active ? 'bg-accent' : 'bg-line'
-                            }`}
-                          />
-                        )}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-xs font-semibold">
-                          {t.label}
-                        </span>
-                        <span className="block text-[11px] text-faint">
-                          {t.blurb}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-
-                {confirmMature && (
-                  <div className="m-1 rounded-lg border border-line/60 bg-surface/60 p-2.5">
-                    <p className="text-[11px] leading-snug text-muted">
-                      Off the rails is 18+. It gets crude and sweary. Turn it
-                      on?
-                    </p>
-                    <div className="mt-2 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={enableMature}
-                        className="rounded-full bg-aurora px-2.5 py-1 text-[11px] font-semibold text-accent-ink shadow-glow active:scale-95"
-                      >
-                        Turn it on
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmMature(false)}
-                        className="rounded-full px-2.5 py-1 text-[11px] font-semibold text-muted hover:text-fg"
-                      >
-                        Not now
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
+        {/* Tone picker (shared with the co-watch room composer) */}
+        <TonePicker />
       </div>
 
       {/* Body */}

@@ -6,6 +6,7 @@ import {
   type RoomConnection,
   type RoomMember,
 } from './realtime';
+import { attachRoomChat, detachRoomChat } from './roomChatStore';
 
 // The co-watch room: a single active room per tab, held as a module singleton so
 // the sync engine (syncPlayer), the chat, and the UI all read one source of
@@ -93,6 +94,7 @@ export const normalizeRoomCode = (raw: string): string =>
 export const leaveRoom = async (): Promise<void> => {
   memberUnsub?.();
   memberUnsub = null;
+  detachRoomChat();
   if (conn) {
     conn.close();
     conn = null;
@@ -117,6 +119,13 @@ export const joinRoom = async (
     const cid = getClientId();
     conn = await connectRoom(code, cid);
     memberUnsub = conn.onMembers((members) => set({ members }));
+    // Activity lines resolve the actor's name off live presence.
+    attachRoomChat(
+      conn,
+      (clientId) =>
+        state.members.find((m) => m.clientId === clientId)?.data.name ||
+        'someone'
+    );
     await conn.enter(identity);
     set({ status: 'connected', selfId: cid });
   } catch (err) {

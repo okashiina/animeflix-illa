@@ -22,6 +22,7 @@ import progressBar from '@components/Progress';
 import RecommendationCard from '@components/watch/Card';
 import CompanionChat from '@components/watch/CompanionChat';
 import Episode from '@components/watch/Episode';
+import FullscreenDock from '@components/watch/FullscreenDock';
 import RoomUI from '@components/watch/RoomUI';
 import SourcePlayer from '@components/watch/SourcePlayer';
 import WatchControls from '@components/watch/WatchControls';
@@ -322,15 +323,16 @@ const Watch = ({
                   ? () => dispatch(setEpisode(episode + 1))
                   : undefined
               }
-              // Fullscreen-dock companion. Same animeId + episode as the
-              // right-rail instance, so both share the one persisted thread.
+              // Fullscreen "theater" dock: the companion AND the co-watch room,
+              // tabbed. Shares the same animeId+episode thread and the same room
+              // as the right-rail instances, so neither surface diverges.
               companionSlot={
-                <CompanionChat
+                <FullscreenDock
                   seed={companionSeed}
                   animeId={animeId}
                   episode={episode}
                   total={totalEpisodes}
-                  variant="dock"
+                  roomInitialCode={roomCode}
                 />
               }
             />
