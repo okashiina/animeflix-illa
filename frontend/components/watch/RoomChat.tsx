@@ -1,69 +1,128 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { PaperAirplaneIcon, SparklesIcon } from '@heroicons/react/outline';
+import {
+  FastForwardIcon,
+  PaperAirplaneIcon,
+  PauseIcon,
+  PlayIcon,
+  SparklesIcon,
+} from '@heroicons/react/outline';
 
+import TonePicker from '@components/watch/companion/TonePicker';
 import type { CompanionSeed } from '@components/watch/CompanionChat';
 import { getAiredContext } from '@utility/companionContext';
+import { useCompanionPrefs } from '@utility/companionPrefs';
 import { getRoomConnection } from '@utility/room';
+import {
+  pushRoomMessage,
+  roomMsgId,
+  useRoomMessages,
+  type RoomMsg,
+} from '@utility/roomChatStore';
 
 // The room's side chat: people talking over the same episode, plus the watch
 // companion when someone calls it in. Messages ride the room's realtime channel
-// and are ephemeral (a live conversation, not saved history). The companion
-// reuses the normal /api/companion route untouched; because the room keeps
-// everyone's playback locked together, the asker's spoiler-safe window is also
-// everyone's, so a called-in answer can't get ahead of the slowest seat.
+// and are ephemeral (a live conversation, not saved history). The list lives in
+// the shared roomChatStore so the right-rail panel and the fullscreen dock show
+// the same thread. The companion reuses the normal /api/companion route, with
+// the asker's own tone; because the room keeps everyone's playback locked
+// together, the asker's spoiler-safe window is also everyone's, so a called-in
+// answer can't get ahead of the slowest seat.
 
-interface RoomMsg {
-  id: string;
-  kind: 'user' | 'companion';
-  name?: string;
-  text: string;
-  self?: boolean;
-}
+// mm:ss episode position the action happened at.
+const fmtPos = (s?: number): string => {
+  if (typeof s !== 'number' || !Number.isFinite(s) || s < 0) return '';
+  const sec = Math.floor(s);
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+};
 
-let msgSeq = 0;
-const nextId = (): string => {
-  msgSeq += 1;
-  return `m${msgSeq}-${Date.now().toString(36)}`;
+// Wall-clock time the action happened (viewer's local time).
+const fmtClock = (ms?: number): string => {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const h12 = d.getHours() % 12 || 12;
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return `${h12}:${m} ${d.getHours() >= 12 ? 'PM' : 'AM'}`;
+};
+
+const ACTIVITY: Record<
+  'play' | 'pause' | 'seek',
+  { verb: string; Icon: React.FC<React.SVGProps<SVGSVGElement>> }
+> = {
+  pause: { verb: 'paused at', Icon: PauseIcon },
+  play: { verb: 'resumed at', Icon: PlayIcon },
+  seek: { verb: 'jumped to', Icon: FastForwardIcon },
+};
+
+// One feed row: a playback-activity line, a companion reply, or a chat message.
+const MessageRow: React.FC<{ m: RoomMsg }> = ({ m }) => {
+  if (m.kind === 'activity' && m.action) {
+    const { verb, Icon } = ACTIVITY[m.action];
+    return (
+      <div className="flex items-center justify-center gap-1.5 py-0.5 text-[11px] text-faint">
+        <Icon className="h-3 w-3 shrink-0 text-accent/70" />
+        <span className="text-center">
+          <span className="font-semibold text-muted">{m.name}</span> {verb}{' '}
+          <span className="tabular-nums text-muted">{fmtPos(m.posSec)}</span>
+          {m.at ? (
+            <span className="text-faint/70"> · {fmtClock(m.at)}</span>
+          ) : null}
+        </span>
+      </div>
+    );
+  }
+
+  if (m.kind === 'companion') {
+    return (
+      <div className="flex items-start gap-2">
+        <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-aurora text-accent-ink">
+          <SparklesIcon className="h-3 w-3" />
+        </span>
+        <p className="max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tl-sm border border-accent/30 bg-surface/70 px-2.5 py-1.5 text-xs leading-relaxed text-fg">
+          {m.text}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`flex flex-col ${m.self ? 'items-end' : 'items-start'}`}>
+      {!m.self && m.name && (
+        <span className="px-1 text-[10px] font-semibold text-faint">
+          {m.name}
+        </span>
+      )}
+      <p
+        className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-2.5 py-1.5 text-xs leading-relaxed ${
+          m.self
+            ? 'rounded-br-sm bg-aurora text-accent-ink'
+            : 'rounded-bl-sm border border-line/50 bg-surface/70 text-fg'
+        }`}
+      >
+        {m.text}
+      </p>
+    </div>
+  );
 };
 
 const RoomChat: React.FC<{
   selfName: string;
   companion: { seed: CompanionSeed; episode: number; total: number };
-}> = ({ selfName, companion }) => {
-  const [msgs, setMsgs] = useState<RoomMsg[]>([]);
+  // `fill` grows the chat to its container (the fullscreen dock); otherwise it's
+  // a fixed-height box in the right-rail card.
+  fill?: boolean;
+}> = ({ selfName, companion, fill = false }) => {
+  const messages = useRoomMessages();
+  const prefs = useCompanionPrefs();
   const [input, setInput] = useState('');
   const [asking, setAsking] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  const push = useCallback((m: RoomMsg): void => {
-    setMsgs((list) => [...list.slice(-80), m]);
-  }, []);
-
-  // Wire incoming chat + companion broadcasts from the room channel.
-  useEffect(() => {
-    const conn = getRoomConnection();
-    if (!conn) return undefined;
-    const offChat = conn.subscribe('chat', (data) => {
-      const d = (data || {}) as { name?: string; text?: string };
-      if (d.text)
-        push({ id: nextId(), kind: 'user', name: d.name, text: d.text });
-    });
-    const offBot = conn.subscribe('companion', (data) => {
-      const d = (data || {}) as { text?: string };
-      if (d.text) push({ id: nextId(), kind: 'companion', text: d.text });
-    });
-    return () => {
-      offChat();
-      offBot();
-    };
-  }, [push]);
 
   // Keep the latest line in view.
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [msgs]);
+  }, [messages]);
 
   const sendChat = (): void => {
     const text = input.trim();
@@ -71,19 +130,32 @@ const RoomChat: React.FC<{
     const conn = getRoomConnection();
     if (!conn) return;
     conn.publish('chat', { name: selfName, text });
-    push({ id: nextId(), kind: 'user', name: selfName, text, self: true });
+    pushRoomMessage({
+      id: roomMsgId(),
+      kind: 'user',
+      name: selfName,
+      text,
+      self: true,
+    });
     setInput('');
   };
 
   // Call the companion into the room: post the question as a normal chat line so
-  // everyone sees what was asked, fetch a grounded reply, then broadcast it.
+  // everyone sees what was asked, fetch a grounded reply in the asker's tone,
+  // then broadcast it.
   const askCompanion = async (): Promise<void> => {
     const text = input.trim();
     if (!text || asking) return;
     const conn = getRoomConnection();
     if (!conn) return;
     conn.publish('chat', { name: selfName, text });
-    push({ id: nextId(), kind: 'user', name: selfName, text, self: true });
+    pushRoomMessage({
+      id: roomMsgId(),
+      kind: 'user',
+      name: selfName,
+      text,
+      self: true,
+    });
     setInput('');
     setAsking(true);
     try {
@@ -95,6 +167,8 @@ const RoomChat: React.FC<{
           seed: companion.seed,
           episode: companion.episode,
           total: companion.total,
+          tone: prefs.tone,
+          mature: prefs.mature,
           window: aired?.lines ?? [],
           roster: companion.seed.roster ?? [],
           studios: companion.seed.studios ?? [],
@@ -105,7 +179,7 @@ const RoomChat: React.FC<{
       const reply = (data.reply || '').trim();
       if (reply) {
         conn.publish('companion', { text: reply });
-        push({ id: nextId(), kind: 'companion', text: reply });
+        pushRoomMessage({ id: roomMsgId(), kind: 'companion', text: reply });
       }
     } catch {
       /* a missed answer just doesn't show; the chat keeps going */
@@ -115,55 +189,33 @@ const RoomChat: React.FC<{
   };
 
   return (
-    <div className="flex h-72 flex-col overflow-hidden rounded-xl border border-line/50 bg-canvas">
+    <div
+      className={`flex flex-col overflow-hidden rounded-xl border border-line/50 bg-canvas ${
+        fill ? 'min-h-0 flex-1' : 'h-72'
+      }`}
+    >
       <div
         ref={scrollRef}
         className="flex-1 space-y-2 overflow-y-auto px-3 py-2.5"
       >
-        {msgs.length === 0 ? (
+        {messages.length === 0 ? (
           <p className="px-1 py-6 text-center text-[11px] leading-relaxed text-faint">
             Say something to the room, or tap the spark to pull the companion
             in. Nobody gets ahead of the slowest seat.
           </p>
         ) : (
-          msgs.map((m) =>
-            m.kind === 'companion' ? (
-              <div key={m.id} className="flex items-start gap-2">
-                <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-aurora text-accent-ink">
-                  <SparklesIcon className="h-3 w-3" />
-                </span>
-                <p className="max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tl-sm border border-accent/30 bg-surface/70 px-2.5 py-1.5 text-xs leading-relaxed text-fg">
-                  {m.text}
-                </p>
-              </div>
-            ) : (
-              <div
-                key={m.id}
-                className={`flex flex-col ${
-                  m.self ? 'items-end' : 'items-start'
-                }`}
-              >
-                {!m.self && m.name && (
-                  <span className="px-1 text-[10px] font-semibold text-faint">
-                    {m.name}
-                  </span>
-                )}
-                <p
-                  className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-2.5 py-1.5 text-xs leading-relaxed ${
-                    m.self
-                      ? 'rounded-br-sm bg-aurora text-accent-ink'
-                      : 'rounded-bl-sm border border-line/50 bg-surface/70 text-fg'
-                  }`}
-                >
-                  {m.text}
-                </p>
-              </div>
-            )
-          )
+          messages.map((m) => <MessageRow key={m.id} m={m} />)
         )}
       </div>
 
       <div className="border-t border-line/50 px-2 py-2">
+        {/* The companion's voice in the room is the asker's chosen tone. */}
+        <div className="mb-1.5 flex items-center justify-between px-0.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+            companion tone
+          </span>
+          <TonePicker placement="top" />
+        </div>
         <div className="flex items-end gap-1.5">
           <button
             type="button"

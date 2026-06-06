@@ -1635,8 +1635,8 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
                           Still here, side stage
                         </p>
                         <p className="mt-0.5 text-xs leading-relaxed text-muted">
-                          Fullscreen and all. Tap to chat with your companion
-                          about the scene you&apos;re on.
+                          Fullscreen and all. Your companion and the watch party
+                          are one tap away.
                         </p>
                         <span className="absolute right-5 top-full -mt-px h-2.5 w-2.5 -translate-y-1/2 rotate-45 border-b border-r border-accent/40 bg-canvas-2" />
                       </div>
@@ -1648,7 +1648,7 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
                       />
                     )}
                     <CtrlButton
-                      label={chatOpen ? 'Hide companion' : 'Show companion'}
+                      label={chatOpen ? 'Hide side panel' : 'Show side panel'}
                       active={chatOpen || showHint}
                       onClick={() => {
                         setChatOpen((c) => !c);
@@ -1676,7 +1676,7 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
               beside it. Scrolls internally and is full stage height. */}
           {showDock && (
             <aside
-              aria-label="Watch companion"
+              aria-label="Companion and watch party"
               onPointerDown={(e) => e.stopPropagation()}
               onKeyDown={(e) => e.stopPropagation()}
               className="flex h-full w-[22rem] shrink-0 flex-col border-l border-line/60 bg-canvas-2/95 backdrop-blur sm:w-[24rem]"

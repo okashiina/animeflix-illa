@@ -28,7 +28,11 @@ const NICK_KEY = 'kessoku.room.nick';
 const RoomUI: React.FC<{
   initialCode?: string;
   companion: { seed: CompanionSeed; episode: number; total: number };
-}> = ({ initialCode, companion }) => {
+  // 'panel' = the windowed right-rail card. 'dock' = fills the fullscreen dock's
+  // height with no card chrome (mirrors CompanionChat's variants).
+  variant?: 'panel' | 'dock';
+}> = ({ initialCode, companion, variant = 'panel' }) => {
+  const isDock = variant === 'dock';
   const room = useRoom();
   const [configured, setConfigured] = useState<'unknown' | 'yes' | 'no'>(
     'unknown'
@@ -119,7 +123,13 @@ const RoomUI: React.FC<{
   // --- Not configured: honest setup note. ---
   if (configured === 'no') {
     return (
-      <div className="flex flex-col items-center rounded-2xl border border-line/60 bg-canvas-2/95 px-6 py-8 text-center shadow-card">
+      <div
+        className={`flex flex-col items-center bg-canvas-2/95 px-6 py-8 text-center ${
+          isDock
+            ? 'h-full justify-center'
+            : 'rounded-2xl border border-line/60 shadow-card'
+        }`}
+      >
         <span className="grid h-10 w-10 place-items-center rounded-full bg-surface text-accent">
           <UserGroupIcon className="h-5 w-5" />
         </span>
@@ -148,7 +158,11 @@ const RoomUI: React.FC<{
   // --- Connected: the room. ---
   if (room.status === 'connected') {
     return (
-      <div className="flex flex-col gap-3 rounded-2xl border border-line/60 bg-canvas-2/95 p-3 shadow-card">
+      <div
+        className={`flex flex-col gap-3 bg-canvas-2/95 p-3 ${
+          isDock ? 'h-full' : 'rounded-2xl border border-line/60 shadow-card'
+        }`}
+      >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="grid h-7 w-7 place-items-center rounded-full bg-aurora text-accent-ink shadow-glow">
@@ -230,7 +244,11 @@ const RoomUI: React.FC<{
           })}
         </div>
 
-        <RoomChat selfName={nick.trim() || 'guest'} companion={companion} />
+        <RoomChat
+          selfName={nick.trim() || 'guest'}
+          companion={companion}
+          fill={isDock}
+        />
 
         <button
           type="button"
@@ -247,7 +265,13 @@ const RoomUI: React.FC<{
   // --- Lobby: create or join. ---
   const connecting = room.status === 'connecting' || configured === 'unknown';
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-line/60 bg-canvas-2/95 p-4 shadow-card">
+    <div
+      className={`flex flex-col gap-3 bg-canvas-2/95 p-4 ${
+        isDock
+          ? 'h-full justify-center'
+          : 'rounded-2xl border border-line/60 shadow-card'
+      }`}
+    >
       <div>
         <p className="font-display text-sm font-bold text-fg">Watch together</p>
         <p className="mt-1 text-xs leading-relaxed text-muted">
