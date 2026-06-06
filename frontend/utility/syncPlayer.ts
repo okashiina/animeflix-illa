@@ -1,5 +1,6 @@
 import { getPlayerHandle, subscribePlayerEvent } from './playerBus';
 import type { RoomConnection } from './realtime';
+import { recordActivity } from './roomChatStore';
 
 // The co-watch sync engine: keeps every member's playback locked together. It is
 // intent-based and symmetric — any member's own play / pause / seek broadcasts a
@@ -42,16 +43,28 @@ export const startSync = (
     conn.publish('sync', msg);
   };
 
-  // Local intent → broadcast. Skip the echoes of our own remote-applied actions.
+  // Local intent → broadcast playback state AND a human-readable activity line
+  // (paused / resumed / jumped, with the episode position). Skip the echoes of
+  // our own remote-applied actions so a synced pause isn't logged on everyone.
   const onLocal =
-    (paused?: boolean) =>
-    (payload: { programmatic: boolean }): void => {
+    (kind: 'play' | 'pause' | 'seek', paused?: boolean) =>
+    (payload: { programmatic: boolean; time: number }): void => {
       if (payload.programmatic) return;
       publishState(paused);
+      const pos = getPlayerHandle()?.getCurrentTime() ?? payload.time ?? 0;
+      const at = Date.now();
+      conn.publish('activity', { action: kind, position: pos, at });
+      recordActivity({
+        clientId: selfId,
+        action: kind,
+        posSec: pos,
+        at,
+        self: true,
+      });
     };
-  offs.push(subscribePlayerEvent('play', onLocal(false)));
-  offs.push(subscribePlayerEvent('pause', onLocal(true)));
-  offs.push(subscribePlayerEvent('seek', onLocal()));
+  offs.push(subscribePlayerEvent('play', onLocal('play', false)));
+  offs.push(subscribePlayerEvent('pause', onLocal('pause', true)));
+  offs.push(subscribePlayerEvent('seek', onLocal('seek')));
 
   // Remote snapshot → apply, drift-corrected. If they're playing, account for the
   // time since their snapshot so we land where they actually are now.
