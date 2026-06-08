@@ -29,7 +29,7 @@ const Header: React.FC<{}> = () => {
     <header
       className={`sticky top-0 z-50 w-full transition-colors duration-300 ${
         scrolled
-          ? 'border-b border-line/50 bg-canvas/70 backdrop-blur-xl'
+          ? 'border-b border-line/50 bg-canvas/80 backdrop-blur-md sm:backdrop-blur-xl'
           : 'border-b border-transparent bg-transparent'
       }`}
     >
