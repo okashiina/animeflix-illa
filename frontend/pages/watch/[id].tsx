@@ -23,6 +23,7 @@ import RecommendationCard from '@components/watch/Card';
 import CompanionChat from '@components/watch/CompanionChat';
 import Episode from '@components/watch/Episode';
 import FullscreenDock from '@components/watch/FullscreenDock';
+import OverlayLayer from '@components/watch/OverlayLayer';
 import RoomUI from '@components/watch/RoomUI';
 import SourcePlayer from '@components/watch/SourcePlayer';
 import WatchControls from '@components/watch/WatchControls';
@@ -32,6 +33,8 @@ import { setEpisode } from '@slices/episode';
 import { setTotalEpisodes } from '@slices/gogoApi';
 import { initialiseStore, useDispatch, useSelector } from '@store/store';
 import { getResumeEpisode } from '@utility/progress';
+import { useRoom } from '@utility/room';
+import { useRoomUnread } from '@utility/roomChatStore';
 import { convertToDate, convertToTime } from '@utility/time';
 import { arrayToString } from '@utility/utils';
 
@@ -165,6 +168,24 @@ const Watch = ({
   const [asideTab, setAsideTab] = useState<
     'recommended' | 'companion' | 'room'
   >('recommended');
+  // Unread room chatter while the Together tab isn't the one showing — badges the tab.
+  const roomUnread = useRoomUnread();
+
+  // Follower lock: in a connected room with a known leader who isn't us, our
+  // playback controls are driven by the leader, so the player locks them and
+  // shows a calm indicator. The leader (and any solo / no-room viewer) is never
+  // locked. The sync engine already ignores a follower's intent; this is the
+  // matching UI lock so the controls don't *look* live when they aren't.
+  const room = useRoom();
+  const controlsLocked = Boolean(
+    room.status === 'connected' &&
+      room.leaderId &&
+      room.selfId &&
+      room.leaderId !== room.selfId
+  );
+  const leaderName =
+    room.members.find((m) => m.clientId === room.leaderId)?.data.name ??
+    'someone';
   // Land on the room tab when arriving through an invite link (post-hydration so
   // SSR markup stays consistent).
   useEffect(() => {
@@ -335,6 +356,13 @@ const Watch = ({
                   roomInitialCode={roomCode}
                 />
               }
+              // Danmaku + reaction floaties over the video (co-watch rooms).
+              overlaySlot={<OverlayLayer />}
+              // Follower lock: a non-leader in a connected room can't drive
+              // playback, so the player locks the playback gestures + shows who
+              // holds the remote. The leader / solo viewer sees no change.
+              controlsLocked={controlsLocked}
+              leaderName={leaderName}
             />
 
             <div className="mt-5">
@@ -422,7 +450,7 @@ const Watch = ({
               <button
                 type="button"
                 onClick={() => setAsideTab('room')}
-                className={`flex items-center gap-1 rounded-full px-3 py-1 transition ${
+                className={`relative flex items-center gap-1 rounded-full px-3 py-1 transition ${
                   asideTab === 'room'
                     ? 'bg-aurora text-accent-ink shadow-glow'
                     : 'text-muted hover:text-fg'
@@ -430,6 +458,11 @@ const Watch = ({
               >
                 <UserGroupIcon className="h-3.5 w-3.5" />
                 Together
+                {roomUnread > 0 && asideTab !== 'room' && (
+                  <span className="absolute -right-1 -top-1 grid h-4 min-w-[1rem] animate-pulse place-items-center rounded-full bg-accent px-1 text-[10px] font-bold leading-none text-accent-ink">
+                    {roomUnread > 9 ? '9+' : roomUnread}
+                  </span>
+                )}
               </button>
             </div>
 

@@ -48,7 +48,22 @@ const SourcePlayer: React.FC<{
   onNext?: () => void;
   // The AI watch companion, forwarded to HlsPlayer for the fullscreen dock.
   companionSlot?: React.ReactNode;
-}> = ({ titles, malId, onNext, companionSlot }) => {
+  // On-video overlay (danmaku + reaction floaties), forwarded to HlsPlayer.
+  overlaySlot?: React.ReactNode;
+  // Follower lock (co-watch): when this viewer isn't the room leader, the
+  // playback controls are locked and a "who has the remote" indicator shows.
+  // Forwarded to HlsPlayer; the leader / solo viewer is never locked.
+  controlsLocked?: boolean;
+  leaderName?: string;
+}> = ({
+  titles,
+  malId,
+  onNext,
+  companionSlot,
+  overlaySlot,
+  controlsLocked,
+  leaderName,
+}) => {
   const animeId = useSelector((store) => store.anime.anime);
   const episode = useSelector((store) => store.episode.episode);
   const useDub = useSelector((store) => store.videoSettings.useDub);
@@ -261,6 +276,9 @@ const SourcePlayer: React.FC<{
         total={totalEpisodes}
         skipMarkers={skipMarkers}
         companionSlot={companionSlot}
+        overlaySlot={overlaySlot}
+        controlsLocked={controlsLocked}
+        leaderName={leaderName}
       />
       {serverPicker}
     </div>

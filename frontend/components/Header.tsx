@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 
 import AniListAuthButton from '@components/AniListAuthButton';
+import RoomJoinLauncher from '@components/RoomJoinLauncher';
 import SearchAutosuggest from '@components/SearchAutosuggest';
 
 const NAV_LINKS = [
@@ -67,6 +68,7 @@ const Header: React.FC<{}> = () => {
         </nav>
 
         <SearchAutosuggest />
+        <RoomJoinLauncher />
         <AniListAuthButton />
       </div>
     </header>

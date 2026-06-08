@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+import { useRouter } from 'next/router';
 
 import {
   ClipboardCheckIcon,
@@ -9,6 +11,7 @@ import {
 
 import type { CompanionSeed } from '@components/watch/CompanionChat';
 import RoomChat from '@components/watch/RoomChat';
+import { useSelector } from '@store/store';
 import { getSession } from '@utility/anilistAuth';
 import { subscribePlayerHandle } from '@utility/playerBus';
 import {
@@ -16,6 +19,9 @@ import {
   joinRoom,
   leaveRoom,
   normalizeRoomCode,
+  peekRoom,
+  type RoomInfo,
+  transferLeader,
   useRoom,
 } from '@utility/room';
 
@@ -33,7 +39,11 @@ const RoomUI: React.FC<{
   variant?: 'panel' | 'dock';
 }> = ({ initialCode, companion, variant = 'panel' }) => {
   const isDock = variant === 'dock';
+  const router = useRouter();
   const room = useRoom();
+  // The anime this watch page is on; an identity carries it so a room knows what
+  // it's watching and a joiner can be warned off a code from a different show.
+  const animeId = useSelector((s) => s.anime.anime);
   const [configured, setConfigured] = useState<'unknown' | 'yes' | 'no'>(
     'unknown'
   );
@@ -45,6 +55,16 @@ const RoomUI: React.FC<{
   );
   const [shareUrl, setShareUrl] = useState('');
   const [copied, setCopied] = useState(false);
+  // Peeking a code before we join: a quick "finding…" beat, and a calm notice
+  // when the room turns out to be watching something else.
+  const [checking, setChecking] = useState(false);
+  const [pendingRoom, setPendingRoom] = useState<{
+    code: string;
+    info: RoomInfo;
+  } | null>(null);
+  // Last code we auto-joined, so an invite link or a post-mismatch hop fires the
+  // join exactly once per code rather than on every render.
+  const autoJoinedRef = useRef<string | null>(null);
 
   // Are rooms even wired up (is there an Ably key)?
   useEffect(() => {
@@ -94,19 +114,57 @@ const RoomUI: React.FC<{
     }
   }, [room.status, room.roomId]);
 
-  const identity = (): { name: string; avatar?: string } => {
+  const identity = (): {
+    name: string;
+    avatar?: string;
+    aid: string;
+    episode: number;
+    title: string;
+  } => {
     const name = (nick.trim() || 'guest').slice(0, 24);
     try {
       window.localStorage.setItem(NICK_KEY, name);
     } catch {
       /* ignore */
     }
-    return { name, avatar };
+    return {
+      name,
+      avatar,
+      aid: String(animeId),
+      episode: companion.episode,
+      title: companion.seed.title,
+    };
   };
 
-  const onJoin = (): void => {
+  // Manual join: peek first so a code from a different show routes the watcher
+  // to that anime instead of silently joining a room that will never sync.
+  const onJoin = async (): Promise<void> => {
     const c = normalizeRoomCode(code);
-    if (c) joinRoom(c, identity());
+    if (!c) return;
+    const currentAid = String(animeId);
+    setChecking(true);
+    let info: RoomInfo | null = null;
+    try {
+      info = await peekRoom(c);
+    } finally {
+      setChecking(false);
+    }
+    if (info && info.aid !== currentAid) {
+      setPendingRoom({ code: c, info });
+      return;
+    }
+    joinRoom(c, identity());
+  };
+
+  // The watcher confirmed the mismatch notice: take them to the room's anime,
+  // where the page auto-joins on arrival.
+  const goToPendingRoom = (): void => {
+    if (!pendingRoom) return;
+    const { info } = pendingRoom;
+    router.push(
+      `/watch/${info.aid}/?episode=${info.episode ?? 1}&room=${info.code}`
+    );
+    setPendingRoom(null);
   };
 
   const copyShare = async (): Promise<void> => {
@@ -119,6 +177,28 @@ const RoomUI: React.FC<{
       /* clipboard blocked — the field is selectable as a fallback */
     }
   };
+
+  // Auto-join on arrival: an invite link (?room=…) or a post-mismatch hop drops
+  // the watcher straight in, but only once we have a real name. With no name yet,
+  // we leave the prefilled code + Join button so they can introduce themselves.
+  const liveCode =
+    typeof router.query.room === 'string'
+      ? router.query.room
+      : initialCode || undefined;
+  useEffect(() => {
+    if (!liveCode) return;
+    if (configured !== 'yes') return;
+    if (room.status === 'connected' || room.status === 'connecting') return;
+    if (!nick.trim()) return;
+    const normalized = normalizeRoomCode(liveCode);
+    if (!normalized) return;
+    if (autoJoinedRef.current === normalized) return;
+    autoJoinedRef.current = normalized;
+    joinRoom(normalized, identity());
+    // identity() reads live nick/avatar/anime context at call time; re-running on
+    // those primitives is enough to fire once a real name lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveCode, configured, room.status, nick]);
 
   // --- Not configured: honest setup note. ---
   if (configured === 'no') {
@@ -157,6 +237,8 @@ const RoomUI: React.FC<{
 
   // --- Connected: the room. ---
   if (room.status === 'connected') {
+    const iLead = room.leaderId === room.selfId;
+    const others = room.members.filter((m) => m.clientId !== room.selfId);
     return (
       <div
         className={`flex flex-col gap-3 bg-canvas-2/95 p-3 ${
@@ -216,6 +298,8 @@ const RoomUI: React.FC<{
         <div className="flex flex-wrap gap-1.5">
           {room.members.map((m) => {
             const isSelf = m.clientId === room.selfId;
+            const isLeader = m.clientId === room.leaderId;
+            const name = m.data.name || 'guest';
             return (
               <span
                 key={m.clientId}
@@ -234,15 +318,60 @@ const RoomUI: React.FC<{
                   />
                 ) : (
                   <span className="grid h-5 w-5 place-items-center rounded-full bg-aurora text-[10px] font-bold text-accent-ink">
-                    {(m.data.name || '?').slice(0, 1).toUpperCase()}
+                    {name.slice(0, 1).toUpperCase()}
                   </span>
                 )}
-                {m.data.name || 'guest'}
+                {name}
+                {isLeader && (
+                  <span
+                    role="img"
+                    aria-label="has the remote"
+                    title="Holding the remote"
+                    className="leading-none"
+                  >
+                    👑
+                  </span>
+                )}
                 {isSelf && <span className="text-faint">you</span>}
               </span>
             );
           })}
         </div>
+
+        {/* Handing the remote: the driver taps a watcher to make them leader.
+            Only the driver sees this, and only when someone else is here. */}
+        {iLead && others.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-faint">Hand the remote to</span>
+            {others.map((m) => (
+              <button
+                key={m.clientId}
+                type="button"
+                onClick={() => transferLeader(m.clientId)}
+                aria-label={`Hand the remote to ${m.data.name || 'guest'}`}
+                title={`Make ${m.data.name || 'guest'} the leader`}
+                className="inline-flex items-center gap-1 rounded-full border border-line/60 bg-surface/50 px-2.5 py-1 text-[11px] font-semibold text-muted transition hover:border-accent/50 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 active:scale-95"
+              >
+                {m.data.name || 'guest'}
+                <span role="img" aria-hidden className="leading-none">
+                  👑
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Leadership status line (the two conditions are mutually exclusive). */}
+        {room.leaderId && room.leaderId === room.selfId && (
+          <p className="text-[11px] text-faint">You&apos;ve got the remote.</p>
+        )}
+        {room.leaderId && room.leaderId !== room.selfId && (
+          <p className="text-[11px] text-faint">
+            {room.members.find((m) => m.clientId === room.leaderId)?.data
+              .name || 'someone'}{' '}
+            has the remote. Sit back and watch.
+          </p>
+        )}
 
         <RoomChat
           selfName={nick.trim() || 'guest'}
@@ -275,8 +404,8 @@ const RoomUI: React.FC<{
       <div>
         <p className="font-display text-sm font-bold text-fg">Watch together</p>
         <p className="mt-1 text-xs leading-relaxed text-muted">
-          Spin up a room, send the link, and the show stays in lockstep. One of
-          you hits pause, everyone pauses.
+          Spin up a room, send the link, watch in lockstep. Whoever starts it
+          holds the remote, and can pass it on.
         </p>
       </div>
 
@@ -315,25 +444,58 @@ const RoomUI: React.FC<{
         <span className="h-px flex-1 bg-line/60" />
       </div>
 
-      <div className="flex items-center gap-1.5">
-        <input
-          value={code}
-          onChange={(e) => setCode(normalizeRoomCode(e.target.value))}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') onJoin();
-          }}
-          placeholder="Room code"
-          className="min-w-0 flex-1 rounded-lg border border-line/60 bg-surface/50 px-3 py-2 text-sm font-semibold tracking-[0.18em] text-fg placeholder:font-normal placeholder:tracking-normal placeholder:text-faint focus:border-accent/60 focus:outline-none"
-        />
-        <button
-          type="button"
-          onClick={onJoin}
-          disabled={connecting || !code.trim()}
-          className="rounded-lg border border-line/60 px-4 py-2 text-sm font-semibold text-fg transition hover:border-accent/50 active:scale-95 disabled:opacity-50"
-        >
-          Join
-        </button>
-      </div>
+      {pendingRoom ? (
+        // Mismatch: the typed code belongs to another show. Offer the hop over
+        // instead of joining a room that would never sync to this player.
+        <div className="rounded-2xl border border-line/60 bg-surface px-3.5 py-3 shadow-glow">
+          <p className="text-sm font-semibold text-fg">
+            This room is watching {pendingRoom.info.title || 'another anime'}.
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-muted">
+            Hop over and watch it together?
+          </p>
+          <div className="mt-3 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={goToPendingRoom}
+              aria-label="Go to the room's anime and watch together"
+              className="rounded-lg bg-aurora px-3 py-2 text-sm font-semibold text-accent-ink shadow-glow transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 active:scale-95"
+            >
+              Take me there
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingRoom(null)}
+              aria-label="Dismiss and stay on this anime"
+              className="rounded-lg border border-line/60 px-3 py-2 text-sm font-semibold text-muted transition hover:border-accent/50 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 active:scale-95"
+            >
+              Stay here
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <input
+            value={code}
+            onChange={(e) => setCode(normalizeRoomCode(e.target.value))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onJoin();
+            }}
+            placeholder="Room code"
+            className="min-w-0 flex-1 rounded-lg border border-line/60 bg-surface/50 px-3 py-2 text-sm font-semibold tracking-[0.18em] text-fg placeholder:font-normal placeholder:tracking-normal placeholder:text-faint focus:border-accent/60 focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              onJoin();
+            }}
+            disabled={connecting || checking || !code.trim()}
+            className="rounded-lg border border-line/60 px-4 py-2 text-sm font-semibold text-fg transition hover:border-accent/50 active:scale-95 disabled:opacity-50"
+          >
+            {checking ? 'Finding the room…' : 'Join'}
+          </button>
+        </div>
+      )}
 
       {room.status === 'error' && room.error && (
         <p className="text-center text-[11px] text-accent">{room.error}</p>

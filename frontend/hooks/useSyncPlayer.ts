@@ -1,7 +1,12 @@
 import { useEffect } from 'react';
 
 import { subscribePlayerHandle } from '@utility/playerBus';
-import { getRoomConnection, getRoomMembers, useRoom } from '@utility/room';
+import {
+  getRoomConnection,
+  getRoomLeaderId,
+  getRoomMembers,
+  useRoom,
+} from '@utility/room';
 import { startSync } from '@utility/syncPlayer';
 
 // Glue: while a room is connected, run the sync engine against whatever direct
@@ -27,7 +32,8 @@ export const useSyncPlayer = (): void => {
         stop = startSync(
           conn,
           () => getRoomMembers().map((m) => m.clientId),
-          selfId
+          selfId,
+          () => getRoomLeaderId()
         );
       }
     });
