@@ -54,6 +54,20 @@ interface HlsPlayerProps {
   // is fullscreen and the chat toggle is on (YouTube-theater style). Off
   // fullscreen the companion stays in the page right-rail, so this slot is null.
   companionSlot?: React.ReactNode;
+  // On-video overlay (danmaku + reaction floaties), mounted inside the video
+  // region so it tracks the picture windowed AND fullscreen. Always non-interactive
+  // at the layer level; the slot owns its own pointer-events for any controls.
+  overlaySlot?: React.ReactNode;
+  // Follower lock (co-watch): true when this viewer is a follower (a connected
+  // room has a leader who isn't us). The playback-affecting user gestures
+  // (play/pause, seek, scrub, number-jump, next episode) are gated off and a
+  // calm "who has the remote" indicator shows. The sync engine still drives the
+  // player through its handle (play/pause/seek), so remote state keeps applying.
+  // The leader / solo viewer is never locked and sees zero change.
+  controlsLocked?: boolean;
+  // Who holds the remote — shown in the lock indicator + tooltip. Only
+  // meaningful when controlsLocked is true.
+  leaderName?: string;
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -332,6 +346,9 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
   total,
   skipMarkers,
   companionSlot,
+  overlaySlot,
+  controlsLocked,
+  leaderName = 'someone',
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -867,14 +884,25 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
     return () => document.removeEventListener('fullscreenchange', onFs);
   }, []);
 
+  // Follower lock: read through a ref so the gated callbacks stay identity-stable
+  // (no dep churn, no stale closure). Only the user-facing playback gestures
+  // consult this; the player handle's play/pause/seek (the sync engine's path)
+  // is deliberately NOT gated, so remote state keeps applying to a follower.
+  const lockedRef = useRef(false);
+  useEffect(() => {
+    lockedRef.current = !!controlsLocked;
+  }, [controlsLocked]);
+
   // ---- actions ----
   const togglePlay = useCallback(() => {
+    if (lockedRef.current) return; // follower: leader drives play/pause
     const v = videoRef.current;
     if (!v) return;
     if (v.paused) v.play().catch(() => undefined);
     else v.pause();
   }, []);
   const seekBy = useCallback((d: number) => {
+    if (lockedRef.current) return; // follower: leader drives seeking
     const v = videoRef.current;
     if (!v) return;
     v.currentTime = Math.min(Math.max(v.currentTime + d, 0), v.duration || 0);
@@ -926,6 +954,7 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
 
   // ---- scrubbing ----
   const seekToClientX = useCallback((clientX: number) => {
+    if (lockedRef.current) return; // follower: scrubber is locked
     const v = videoRef.current;
     const el = trackRef.current;
     if (!v || !el || !v.duration) return;
@@ -970,7 +999,11 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
       c: toggleCaptions,
       f: toggleFs,
       p: togglePip,
-      n: () => onNext?.(),
+      // Next episode is a leader-only action; a follower's `n` does nothing.
+      n: () => {
+        if (lockedRef.current) return;
+        onNext?.();
+      },
     };
     const fn = map[e.key];
     if (fn) {
@@ -978,6 +1011,7 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
       poke();
       fn();
     } else if (/^[0-9]$/.test(e.key)) {
+      if (lockedRef.current) return; // follower: number-key seek is locked
       const v = videoRef.current;
       if (v && v.duration) {
         e.preventDefault();
@@ -1141,6 +1175,30 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
               ))}
             </video>
 
+            {/* Follower lock indicator. A calm, legible chip over the video
+              (top-left) telling the viewer the leader holds the remote. Lives
+              inside the video region so it tracks the picture in fullscreen too.
+              No alarming animation — the corner cue plus the dimmed controls say
+              it all. Only rendered for a follower; the leader / solo viewer
+              never sees it. */}
+            {controlsLocked && (
+              <div className="pointer-events-none absolute left-3 top-3 z-30 inline-flex items-center gap-1.5 rounded-full border border-line/60 bg-canvas/70 px-2.5 py-1 text-[11px] font-medium text-muted backdrop-blur">
+                <span role="img" aria-label="Leader">
+                  👑
+                </span>
+                <span>{leaderName} has the remote</span>
+              </div>
+            )}
+
+            {/* On-video overlay (danmaku + reaction floaties). Sits above the
+              video, below the caption layer (z-30) and the controls. The layer
+              itself never eats pointer events; the slot opts specific controls in. */}
+            {overlaySlot && (
+              <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+                {overlaySlot}
+              </div>
+            )}
+
             {/* Our own caption layer (native rendering is suppressed to 'hidden').
               The box stays mounted whenever subtitles are on — even between lines —
               so a drag survives cue-text changes; it sits above the controls (z-30)
@@ -1206,19 +1264,29 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
               </div>
             )}
 
-            {/* Center play when paused */}
-            {!playing && !waiting && (
-              <button
-                type="button"
-                aria-label="Play"
-                onClick={togglePlay}
-                className="absolute inset-0 grid place-items-center"
-              >
-                <span className="grid h-[68px] w-[68px] place-items-center rounded-full bg-aurora text-accent-ink shadow-glow transition duration-200 hover:scale-105 active:scale-95">
-                  <PlayIcon className="ml-0.5 h-8 w-8" />
-                </span>
-              </button>
-            )}
+            {/* Center play when paused. For a follower the leader drives play,
+              so a tap here would do nothing and feel broken — render a calm,
+              non-interactive paused glyph instead (the corner chip explains why). */}
+            {!playing &&
+              !waiting &&
+              (controlsLocked ? (
+                <div className="pointer-events-none absolute inset-0 grid place-items-center">
+                  <span className="grid h-[68px] w-[68px] place-items-center rounded-full border border-line/60 bg-canvas/70 text-muted backdrop-blur">
+                    <PlayIcon className="ml-0.5 h-8 w-8 opacity-60" />
+                  </span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  aria-label="Play"
+                  onClick={togglePlay}
+                  className="absolute inset-0 grid place-items-center"
+                >
+                  <span className="grid h-[68px] w-[68px] place-items-center rounded-full bg-aurora text-accent-ink shadow-glow transition duration-200 hover:scale-105 active:scale-95">
+                    <PlayIcon className="ml-0.5 h-8 w-8" />
+                  </span>
+                </button>
+              ))}
 
             {/* Keyboard shortcuts overlay */}
             {help && (
@@ -1256,8 +1324,10 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
             )}
 
             {/* Skip intro / outro (AniSkip). Sits above the control scrim, lifts a
-              little when the chrome is visible so it never overlaps the bar. */}
-            {activeSkip && !help && !showUpNext && (
+              little when the chrome is visible so it never overlaps the bar.
+              Hidden for a follower — skipping is a seek, and only the leader
+              drives playback. */}
+            {activeSkip && !help && !showUpNext && !controlsLocked && (
               <button
                 type="button"
                 onClick={() => skipTo(activeSkip.end)}
@@ -1281,8 +1351,10 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
               </button>
             )}
 
-            {/* Up next — auto-play countdown in the final seconds. */}
-            {showUpNext && !help && (
+            {/* Up next — auto-play countdown in the final seconds. Hidden for a
+              follower: advancing the episode is the leader's call, and the room
+              syncs the follower forward anyway. */}
+            {showUpNext && !help && !controlsLocked && (
               <div
                 className={`absolute right-4 z-30 w-56 rounded-xl border border-line/60 bg-canvas/90 p-3 shadow-lift backdrop-blur sm:right-6 ${
                   chromeVisible ? 'bottom-24' : 'bottom-8'
@@ -1334,7 +1406,11 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
                   aria-valuenow={Math.floor(current)}
                   onPointerDown={onTrackDown}
                   onPointerMove={onTrackMove}
-                  className="group/sb relative flex h-4 cursor-pointer items-center"
+                  className={`group/sb relative flex h-4 items-center ${
+                    controlsLocked
+                      ? 'pointer-events-none cursor-not-allowed opacity-40'
+                      : 'cursor-pointer'
+                  }`}
                 >
                   <div className="absolute inset-x-0 h-1 overflow-hidden rounded-full bg-fg/20">
                     <div
@@ -1355,29 +1431,74 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
 
               {/* Buttons */}
               <div className="flex items-center gap-0.5 px-2">
-                <CtrlButton
-                  label={playing ? 'Pause' : 'Play'}
-                  onClick={togglePlay}
+                {/* Play/pause. For a follower this is dimmed + a no-op (togglePlay
+                  self-gates); the title says who actually holds the remote. We
+                  keep it hoverable (no pointer-events-none on the wrapper) so the
+                  tooltip explains the lock. */}
+                <span
+                  className={
+                    controlsLocked ? 'cursor-not-allowed opacity-40' : ''
+                  }
+                  title={
+                    controlsLocked
+                      ? `${leaderName} has the remote. Only they can hit play.`
+                      : undefined
+                  }
                 >
-                  {playing ? <PauseIcon /> : <PlayIcon />}
-                </CtrlButton>
-                {onNext && (
-                  <CtrlButton label="Next episode (n)" onClick={onNext}>
-                    <NextIcon />
+                  <CtrlButton
+                    label={playing ? 'Pause' : 'Play'}
+                    onClick={togglePlay}
+                  >
+                    {playing ? <PauseIcon /> : <PlayIcon />}
                   </CtrlButton>
+                </span>
+                {onNext && (
+                  <span
+                    className={
+                      controlsLocked
+                        ? 'pointer-events-none cursor-not-allowed opacity-40'
+                        : ''
+                    }
+                  >
+                    <CtrlButton
+                      label="Next episode (n)"
+                      onClick={() => {
+                        if (controlsLocked) return;
+                        onNext();
+                      }}
+                    >
+                      <NextIcon />
+                    </CtrlButton>
+                  </span>
                 )}
-                <CtrlButton
-                  label={`Back ${skip}s`}
-                  onClick={() => seekBy(-skip)}
+                <span
+                  className={
+                    controlsLocked
+                      ? 'pointer-events-none cursor-not-allowed opacity-40'
+                      : ''
+                  }
                 >
-                  <SkipBackIcon seconds={skip} />
-                </CtrlButton>
-                <CtrlButton
-                  label={`Forward ${skip}s`}
-                  onClick={() => seekBy(skip)}
+                  <CtrlButton
+                    label={`Back ${skip}s`}
+                    onClick={() => seekBy(-skip)}
+                  >
+                    <SkipBackIcon seconds={skip} />
+                  </CtrlButton>
+                </span>
+                <span
+                  className={
+                    controlsLocked
+                      ? 'pointer-events-none cursor-not-allowed opacity-40'
+                      : ''
+                  }
                 >
-                  <SkipFwdIcon seconds={skip} />
-                </CtrlButton>
+                  <CtrlButton
+                    label={`Forward ${skip}s`}
+                    onClick={() => seekBy(skip)}
+                  >
+                    <SkipFwdIcon seconds={skip} />
+                  </CtrlButton>
+                </span>
 
                 <div className="flex items-center">
                   <CtrlButton

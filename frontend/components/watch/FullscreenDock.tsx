@@ -7,6 +7,7 @@ import CompanionChat, {
 } from '@components/watch/CompanionChat';
 import RoomUI from '@components/watch/RoomUI';
 import { useRoom } from '@utility/room';
+import { useRoomUnread } from '@utility/roomChatStore';
 
 // The fullscreen "theater" dock. In fullscreen the page right-rail is gone, so
 // this brings its two interactive tabs (Companion / Together) over the video.
@@ -23,11 +24,12 @@ const TabButton: React.FC<{
   icon: React.FC<React.SVGProps<SVGSVGElement>>;
   label: string;
   dot?: boolean;
-}> = ({ active, onClick, icon: Icon, label, dot }) => (
+  badge?: number;
+}> = ({ active, onClick, icon: Icon, label, dot, badge = 0 }) => (
   <button
     type="button"
     onClick={onClick}
-    className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
+    className={`relative flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
       active
         ? 'bg-aurora text-accent-ink shadow-glow'
         : 'text-muted hover:text-fg'
@@ -35,13 +37,19 @@ const TabButton: React.FC<{
   >
     <Icon className="h-3.5 w-3.5" />
     {label}
-    {dot && (
-      <span
-        className={`h-1.5 w-1.5 rounded-full ${
-          active ? 'bg-accent-ink' : 'bg-accent'
-        }`}
-        aria-hidden
-      />
+    {badge > 0 ? (
+      <span className="grid h-4 min-w-[1rem] animate-pulse place-items-center rounded-full bg-accent px-1 text-[10px] font-bold leading-none text-accent-ink">
+        {badge > 9 ? '9+' : badge}
+      </span>
+    ) : (
+      dot && (
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${
+            active ? 'bg-accent-ink' : 'bg-accent'
+          }`}
+          aria-hidden
+        />
+      )
     )}
   </button>
 );
@@ -55,6 +63,7 @@ const FullscreenDock: React.FC<{
 }> = ({ seed, animeId, episode, total, roomInitialCode }) => {
   const room = useRoom();
   const inRoom = room.status === 'connected';
+  const unread = useRoomUnread();
   // Open on whichever tab the viewer is most likely here for: the room if they
   // are already in one, otherwise the companion.
   const [tab, setTab] = useState<Tab>(inRoom ? 'room' : 'companion');
@@ -79,6 +88,7 @@ const FullscreenDock: React.FC<{
           icon={UserGroupIcon}
           label="Together"
           dot={inRoom}
+          badge={tab === 'room' ? 0 : unread}
         />
       </div>
 

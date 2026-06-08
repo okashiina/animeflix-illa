@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { Readable } from 'node:stream';
 import { config } from './config.js';
+import { isFetchUrlSafe } from './ssrfGuard.js';
 
 // Media proxy for direct (non-HLS) files that are Referer/hotlink-gated — e.g.
 // AllAnime's fast4speed CDN MP4s, which 404 without a Referer the browser can't
@@ -14,6 +15,10 @@ export async function handleFile(
   const { url, ref } = req.query as { url?: string; ref?: string };
   if (!url) {
     reply.code(400).send({ error: 'missing url' });
+    return;
+  }
+  if (!(await isFetchUrlSafe(url))) {
+    reply.code(400).send({ error: 'invalid url' });
     return;
   }
   const referer = ref || '';

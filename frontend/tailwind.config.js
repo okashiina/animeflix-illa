@@ -58,10 +58,25 @@ module.exports = {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
         },
+        // Danmaku bullet comment: enters just off the right edge of the video
+        // region and scrolls fully across to the left. cqw resolves against the
+        // player's video wrapper (container-type: inline-size).
+        danmaku: {
+          from: { transform: 'translateX(0)' },
+          to: { transform: 'translateX(calc(-100cqw - 100%))' },
+        },
+        // Reaction floaty: an emoji rising and fading as it drifts up.
+        floaty: {
+          '0%': { transform: 'translateY(0) scale(0.9)', opacity: '0' },
+          '12%': { opacity: '1' },
+          '100%': { transform: 'translateY(-200px) scale(1.5)', opacity: '0' },
+        },
       },
       animation: {
         rise: 'rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) both',
         'fade-in': 'fade-in 0.5s ease-out both',
+        danmaku: 'danmaku 8s linear forwards',
+        floaty: 'floaty 2.2s ease-out forwards',
       },
     },
   },

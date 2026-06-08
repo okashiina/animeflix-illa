@@ -35,12 +35,56 @@ const EMPTY: RoomMsg[] = [];
 const listeners = new Set<() => void>();
 const emit = (): void => listeners.forEach((l) => l());
 
+// Unread "poke": a count that ticks up when a chat/companion line arrives while
+// nobody is looking at the room panel (the viewer is on another tab or has the
+// dock closed), so the Together tab can badge it. `activeCount` is the number of
+// mounted RoomChat views; while one is open, messages are read immediately.
+let unread = 0;
+let activeCount = 0;
+const unreadListeners = new Set<() => void>();
+const emitUnread = (): void => unreadListeners.forEach((l) => l());
+
+export const markRoomActive = (): void => {
+  activeCount += 1;
+  if (unread !== 0) {
+    unread = 0;
+    emitUnread();
+  }
+};
+export const markRoomInactive = (): void => {
+  activeCount = Math.max(0, activeCount - 1);
+};
+
+export const useRoomUnread = (): number =>
+  useSyncExternalStore(
+    (cb) => {
+      unreadListeners.add(cb);
+      return () => unreadListeners.delete(cb);
+    },
+    () => unread,
+    () => 0
+  );
+
 export const pushRoomMessage = (m: RoomMsg): void => {
   messages = [...messages.slice(-120), m];
+  // Badge incoming chatter (not our own, not ambient activity lines) when the
+  // room panel isn't open.
+  if (
+    !m.self &&
+    activeCount === 0 &&
+    (m.kind === 'user' || m.kind === 'companion')
+  ) {
+    unread += 1;
+    emitUnread();
+  }
   emit();
 };
 
 export const clearRoomMessages = (): void => {
+  if (unread !== 0) {
+    unread = 0;
+    emitUnread();
+  }
   if (messages.length) {
     messages = [];
     emit();

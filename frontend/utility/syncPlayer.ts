@@ -3,11 +3,11 @@ import type { RoomConnection } from './realtime';
 import { recordActivity } from './roomChatStore';
 
 // The co-watch sync engine: keeps every member's playback locked together. It is
-// intent-based and symmetric — any member's own play / pause / seek broadcasts a
-// snapshot, and everyone else drift-corrects toward it. No single "host" drives
-// playback; the only host-ish role is emitting a low-frequency heartbeat so a
-// late joiner (or a drifting tab) re-anchors, and that role is just "lowest
-// clientId present", computed without any election.
+// leader-driven — only the room's current driver (leaderId) broadcasts its
+// play / pause / seek snapshots and emits the re-anchor heartbeat; everyone else
+// follows and drift-corrects toward the driver. Followers' own player gestures
+// are locked in the UI, and the engine ignores their intent here too, so a
+// stray event can't move the room.
 //
 // Two guards keep it from feeding back on itself:
 //   - the player bus tags events we caused via the handle as `programmatic`, so
@@ -28,9 +28,11 @@ const HEARTBEAT_MS = 5000;
 export const startSync = (
   conn: RoomConnection,
   getMemberIds: () => string[],
-  selfId: string
+  selfId: string,
+  getLeaderId: () => string | null
 ): (() => void) => {
   const offs: (() => void)[] = [];
+  const isLeader = (): boolean => getLeaderId() === selfId;
 
   const publishState = (pausedOverride?: boolean): void => {
     const h = getPlayerHandle();
@@ -50,6 +52,9 @@ export const startSync = (
     (kind: 'play' | 'pause' | 'seek', paused?: boolean) =>
     (payload: { programmatic: boolean; time: number }): void => {
       if (payload.programmatic) return;
+      // Only the driver's intent moves the room. A follower's own play/pause
+      // (locked controls, or a native buffering blip) stays local.
+      if (!isLeader()) return;
       publishState(paused);
       const pos = getPlayerHandle()?.getCurrentTime() ?? payload.time ?? 0;
       const at = Date.now();
@@ -67,10 +72,11 @@ export const startSync = (
   offs.push(subscribePlayerEvent('seek', onLocal('seek')));
 
   // Remote snapshot → apply, drift-corrected. If they're playing, account for the
-  // time since their snapshot so we land where they actually are now.
+  // time since their snapshot so we land where they actually are now. Only the
+  // current driver's snapshots are authoritative; ignore anyone else's.
   offs.push(
     conn.subscribe('sync', (data, from) => {
-      if (from === selfId) return;
+      if (from === selfId || from !== getLeaderId()) return;
       const msg = data as SyncMsg | null;
       const h = getPlayerHandle();
       if (!h || !msg || typeof msg.position !== 'number') return;
@@ -85,25 +91,24 @@ export const startSync = (
     })
   );
 
-  // A newcomer says hello; everyone already in the room answers with their
-  // current state so the newcomer anchors immediately instead of waiting for the
-  // next heartbeat.
+  // A newcomer says hello; the driver answers with its current state so the
+  // newcomer anchors immediately instead of waiting for the next heartbeat.
   offs.push(
     conn.subscribe('hello', (_data, from) => {
-      if (from !== selfId) publishState();
+      if (from !== selfId && isLeader()) publishState();
     })
   );
 
+  // Re-anchor heartbeat: only the driver emits it.
   const heartbeat = setInterval(() => {
-    const ids = getMemberIds();
-    if (ids.length < 2) return;
-    const host = [...ids].sort()[0];
-    if (host === selfId) publishState();
+    if (getMemberIds().length < 2) return;
+    if (isLeader()) publishState();
   }, HEARTBEAT_MS);
 
-  // Announce arrival + an immediate snapshot so existing members and we converge.
+  // Announce arrival so the driver re-anchors us. If we ARE the driver, push an
+  // immediate snapshot so everyone converges on us.
   conn.publish('hello', {});
-  publishState();
+  if (isLeader()) publishState();
 
   return () => {
     offs.forEach((off) => off());

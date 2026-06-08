@@ -14,11 +14,19 @@ import { getAiredContext } from '@utility/companionContext';
 import { useCompanionPrefs } from '@utility/companionPrefs';
 import { getRoomConnection } from '@utility/room';
 import {
+  markRoomActive,
+  markRoomInactive,
   pushRoomMessage,
   roomMsgId,
   useRoomMessages,
   type RoomMsg,
 } from '@utility/roomChatStore';
+import {
+  sendDanmaku,
+  sendReaction,
+  toggleDanmaku,
+  useDanmakuOn,
+} from '@utility/roomOverlayStore';
 
 // The room's side chat: people talking over the same episode, plus the watch
 // companion when someone calls it in. Messages ride the room's realtime channel
@@ -53,6 +61,9 @@ const ACTIVITY: Record<
   play: { verb: 'resumed at', Icon: PlayIcon },
   seek: { verb: 'jumped to', Icon: FastForwardIcon },
 };
+
+// Reaction emojis that float up over the video for everyone in the room.
+const REACTIONS = ['🔥', '😂', '😭', '👏', '💀', '✨'];
 
 // One feed row: a playback-activity line, a companion reply, or a chat message.
 const MessageRow: React.FC<{ m: RoomMsg }> = ({ m }) => {
@@ -114,8 +125,11 @@ const RoomChat: React.FC<{
 }> = ({ selfName, companion, fill = false }) => {
   const messages = useRoomMessages();
   const prefs = useCompanionPrefs();
+  const danmakuOn = useDanmakuOn();
   const [input, setInput] = useState('');
   const [asking, setAsking] = useState(false);
+  // 'chat' posts to the room feed; 'danmaku' flies the text across the video.
+  const [mode, setMode] = useState<'chat' | 'danmaku'>('chat');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Keep the latest line in view.
@@ -123,6 +137,13 @@ const RoomChat: React.FC<{
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
+
+  // While this view is mounted the room is "open", so incoming lines count as
+  // read; unmounting (switching tabs / closing the dock) lets them badge again.
+  useEffect(() => {
+    markRoomActive();
+    return () => markRoomInactive();
+  }, []);
 
   const sendChat = (): void => {
     const text = input.trim();
@@ -138,6 +159,18 @@ const RoomChat: React.FC<{
       self: true,
     });
     setInput('');
+  };
+
+  // Dispatch the composer: a chat line, or a danmaku that flies on the video.
+  const send = (): void => {
+    if (mode === 'danmaku') {
+      const text = input.trim();
+      if (!text) return;
+      sendDanmaku(text, selfName);
+      setInput('');
+      return;
+    }
+    sendChat();
   };
 
   // Call the companion into the room: post the question as a normal chat line so
@@ -209,13 +242,68 @@ const RoomChat: React.FC<{
       </div>
 
       <div className="border-t border-line/50 px-2 py-2">
-        {/* The companion's voice in the room is the asker's chosen tone. */}
-        <div className="mb-1.5 flex items-center justify-between px-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-faint">
-            companion tone
-          </span>
+        {/* Left: send as chat vs danmaku. Right: the companion's tone. */}
+        <div className="mb-1.5 flex items-center justify-between gap-2 px-0.5">
+          <div className="inline-flex rounded-full border border-line/60 p-0.5 text-[10px] font-semibold">
+            <button
+              type="button"
+              onClick={() => setMode('chat')}
+              aria-pressed={mode === 'chat'}
+              className={`rounded-full px-2 py-0.5 transition ${
+                mode === 'chat'
+                  ? 'bg-aurora text-accent-ink'
+                  : 'text-muted hover:text-fg'
+              }`}
+            >
+              Chat
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('danmaku')}
+              aria-pressed={mode === 'danmaku'}
+              className={`rounded-full px-2 py-0.5 transition ${
+                mode === 'danmaku'
+                  ? 'bg-aurora text-accent-ink'
+                  : 'text-muted hover:text-fg'
+              }`}
+            >
+              🌠 Danmaku
+            </button>
+          </div>
           <TonePicker placement="top" />
         </div>
+
+        {/* Reactions fly over the video; the danmaku toggle hides/shows comments.
+            Both controls live here so the player itself stays uncluttered. */}
+        <div className="mb-1.5 flex items-center justify-between gap-2 px-0.5">
+          <div className="flex items-center gap-0.5">
+            {REACTIONS.map((e) => (
+              <button
+                key={e}
+                type="button"
+                aria-label={`React ${e}`}
+                onClick={() => sendReaction(e)}
+                className="grid h-7 w-7 place-items-center rounded-md text-base transition hover:scale-125 hover:bg-surface/70 active:scale-95"
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={toggleDanmaku}
+            aria-pressed={danmakuOn}
+            title={danmakuOn ? 'Hide danmaku' : 'Show danmaku'}
+            className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition ${
+              danmakuOn
+                ? 'border-accent/40 text-accent'
+                : 'border-line/60 text-faint hover:text-muted'
+            }`}
+          >
+            🌠 {danmakuOn ? 'on' : 'off'}
+          </button>
+        </div>
+
         <div className="flex items-end gap-1.5">
           <button
             type="button"
@@ -235,18 +323,20 @@ const RoomChat: React.FC<{
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                sendChat();
+                send();
               }
             }}
             rows={1}
-            placeholder="Message the room…"
+            placeholder={
+              mode === 'danmaku' ? 'Fly a danmaku…' : 'Message the room…'
+            }
             className="max-h-20 min-h-[2.25rem] flex-1 resize-none rounded-lg border border-line/60 bg-surface/50 px-2.5 py-1.5 text-xs text-fg placeholder:text-faint focus:border-accent/60 focus:outline-none"
           />
           <button
             type="button"
-            onClick={sendChat}
+            onClick={send}
             disabled={!input.trim()}
-            aria-label="Send to the room"
+            aria-label={mode === 'danmaku' ? 'Fly danmaku' : 'Send to the room'}
             className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-aurora text-accent-ink shadow-glow transition active:scale-95 disabled:opacity-40"
           >
             <PaperAirplaneIcon className="h-4 w-4 rotate-90" />

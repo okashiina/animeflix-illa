@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { config } from './config.js';
+import { isFetchUrlSafe } from './ssrfGuard.js';
 
 // HLS proxy (like Miruro's ultracloud.cc): fetch the playlist/segments with the
 // right Referer/Origin and rewrite every nested URL to come back through here, so
@@ -38,11 +39,26 @@ export async function handleHls(req: FastifyRequest, reply: FastifyReply): Promi
     reply.code(400).send({ error: 'missing url' });
     return;
   }
+  if (!(await isFetchUrlSafe(url))) {
+    reply.code(400).send({ error: 'invalid url' });
+    return;
+  }
   const referer = ref || '';
+  // Origin must be derived only from a parseable Referer; a non-empty but invalid
+  // ref used to throw on new URL() and 500 the request, so guard it here and fall
+  // back to sending just the Referer (or neither) when it does not parse.
+  let refHeaders: Record<string, string> = {};
+  if (referer) {
+    try {
+      refHeaders = { Referer: referer, Origin: new URL(referer).origin };
+    } catch {
+      refHeaders = { Referer: referer };
+    }
+  }
   const upstream = await fetch(url, {
     headers: {
       'User-Agent': config.userAgent,
-      ...(referer ? { Referer: referer, Origin: new URL(referer).origin } : {}),
+      ...refHeaders,
     },
   });
 

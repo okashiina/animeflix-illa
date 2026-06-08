@@ -20,6 +20,12 @@ type RealtimeCtor = new (options: ClientOptions) => RealtimeClient;
 export interface MemberData {
   name: string;
   avatar?: string;
+  // What this member is watching. Lets a peek route a joiner to the room's anime
+  // and warn when they typed a code from a different show. `aid` is the
+  // /watch/[id] route id; `title` is for display in the mismatch notice.
+  aid?: string;
+  episode?: number;
+  title?: string;
 }
 
 export interface RoomMember {
@@ -67,7 +73,9 @@ export const connectRoom = async (
 ): Promise<RoomConnection> => {
   const Rt = await loadRealtime();
   const client = new Rt({
-    authUrl: `/api/room/token?clientId=${encodeURIComponent(clientId)}`,
+    authUrl: `/api/room/token?clientId=${encodeURIComponent(
+      clientId
+    )}&room=${encodeURIComponent(roomId)}`,
     clientId,
     // Don't deliver our own messages back to us — we apply local actions
     // optimistically, so an echo would just be noise (and a sync feedback loop).
