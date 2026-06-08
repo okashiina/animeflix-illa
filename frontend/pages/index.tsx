@@ -33,6 +33,7 @@ import Reveal, {
   RevealStagger,
 } from '@components/motion/Reveal';
 import progressBar from '@components/Progress';
+import useMediaQuery from '@hooks/useMediaQuery';
 import { AiringEntry, fetchSplashData, MediaInfo } from '@utility/anilist';
 import { base64SolidImage } from '@utility/image';
 
@@ -51,6 +52,8 @@ const Poster: React.FC<{ src: string }> = ({ src }) => (
     src={src}
     alt=""
     aria-hidden
+    loading="lazy"
+    decoding="async"
     className="h-36 w-24 shrink-0 rounded-xl object-cover sm:h-44 sm:w-28"
   />
 );
@@ -381,7 +384,7 @@ const SplashNav: React.FC = () => {
     <header
       className={`sticky top-0 z-50 w-full transition-colors duration-300 ${
         scrolled
-          ? 'border-b border-line/50 bg-canvas/70 backdrop-blur-xl'
+          ? 'border-b border-line/50 bg-canvas/80 backdrop-blur-md sm:backdrop-blur-xl'
           : 'border-b border-transparent bg-transparent'
       }`}
     >
@@ -442,6 +445,12 @@ const heroItem = {
 
 const Hero: React.FC<{ covers: string[] }> = ({ covers }) => {
   const reduced = useReducedMotion();
+  // Touch devices (phones) have weaker GPUs; animating large blurred surfaces
+  // there stutters. We keep the glows static on touch (the look survives) and
+  // only drift them on desktop. Continuous-motion gate, separate from the
+  // one-time entrance reveals which stay everywhere.
+  const coarse = useMediaQuery('(pointer: coarse)');
+  const lite = Boolean(reduced) || coarse;
   const rowA = covers.slice(0, 8);
   const rowB = covers.slice(8, 16);
 
@@ -449,33 +458,29 @@ const Hero: React.FC<{ covers: string[] }> = ({ covers }) => {
     <section className="relative isolate flex min-h-[88vh] w-full items-center overflow-hidden">
       {/* Atmosphere: faint poster wall + drifting stage-light glows + scrims. */}
       <div aria-hidden className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute inset-0 flex flex-col justify-center gap-3 opacity-[0.13] blur-[1px]">
+        {/* No blur filter here: a blur over the moving marquee re-rasterizes every
+          frame. At 0.13 opacity behind the scrims it reads the same without it. */}
+        <div className="absolute inset-0 flex flex-col justify-center gap-3 opacity-[0.13]">
           <PosterMarquee covers={rowA} reduced={Boolean(reduced)} />
           <PosterMarquee covers={rowB} reverse reduced={Boolean(reduced)} />
         </div>
 
+        {/* Stage-light glows. Translate-only drift (no scale) so the blurred
+          surface is rasterized once and just composited, never re-blurred. */}
         <motion.div
           className="absolute -right-24 -top-28 h-[30rem] w-[30rem] rounded-full bg-accent/25 blur-3xl"
-          animate={
-            reduced
-              ? undefined
-              : { x: [0, 40, 0], y: [0, 30, 0], scale: [1, 1.12, 1] }
-          }
+          animate={lite ? undefined : { x: [0, 40, 0], y: [0, 30, 0] }}
           transition={
-            reduced
+            lite
               ? undefined
               : { duration: 20, repeat: Infinity, ease: 'easeInOut' }
           }
         />
         <motion.div
           className="absolute -left-28 top-1/3 h-[26rem] w-[26rem] rounded-full bg-accent-soft/20 blur-3xl"
-          animate={
-            reduced
-              ? undefined
-              : { x: [0, -30, 0], y: [0, 40, 0], scale: [1.1, 1, 1.1] }
-          }
+          animate={lite ? undefined : { x: [0, -30, 0], y: [0, 40, 0] }}
           transition={
-            reduced
+            lite
               ? undefined
               : { duration: 24, repeat: Infinity, ease: 'easeInOut' }
           }
