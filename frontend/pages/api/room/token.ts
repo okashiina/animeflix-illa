@@ -30,9 +30,28 @@ const handler = async (
     (typeof raw === 'string' && raw.trim().slice(0, 64)) ||
     `guest-${randomUUID()}`;
 
+  // Bind the token to the single room channel the client is joining, so a token
+  // can't be replayed against other rooms. The code shape mirrors
+  // `normalizeRoomCode` (uppercased [A-Z0-9], max 12). A real client always
+  // sends a valid `room`; the no-capability fallback below is just safety so the
+  // probe/legacy paths never regress.
+  const roomRaw = req.query.room;
+  const room = typeof roomRaw === 'string' ? roomRaw : '';
+  const validRoom = /^[A-Z0-9]{1,12}$/i.test(room);
+
   try {
     const rest = new Ably.Rest({ key: ABLY_KEY });
-    const tokenRequest = await rest.auth.createTokenRequest({ clientId });
+    // NOTE: the `kessoku:room:` prefix is hardcoded here and MUST stay in sync
+    // with `CHANNEL_PREFIX` in `utility/realtime.ts`.
+    const tokenParams: Ably.TokenParams = validRoom
+      ? {
+          clientId,
+          capability: JSON.stringify({
+            [`kessoku:room:${room}`]: ['subscribe', 'publish', 'presence'],
+          }),
+        }
+      : { clientId };
+    const tokenRequest = await rest.auth.createTokenRequest(tokenParams);
     res.status(200).json(tokenRequest);
   } catch (err) {
     // eslint-disable-next-line no-console
