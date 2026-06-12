@@ -21,6 +21,7 @@ import Header from '@components/Header';
 import progressBar from '@components/Progress';
 import RecommendationCard from '@components/watch/Card';
 import CompanionChat from '@components/watch/CompanionChat';
+import CompanionFab from '@components/watch/CompanionFab';
 import Episode from '@components/watch/Episode';
 import FullscreenDock from '@components/watch/FullscreenDock';
 import OverlayLayer from '@components/watch/OverlayLayer';
@@ -497,6 +498,15 @@ const Watch = ({
           </aside>
         </div>
       </main>
+
+      {/* Mobile-only floating companion: the right rail above is hidden on
+          phones, so this keeps the companion one tap away while watching. */}
+      <CompanionFab
+        seed={companionSeed}
+        animeId={animeId}
+        episode={episode}
+        total={totalEpisodes}
+      />
     </>
   );
 };
