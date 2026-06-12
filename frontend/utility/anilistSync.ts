@@ -1,5 +1,6 @@
 import { authHeader, type AniListSession } from './anilistAuth';
 import {
+  clearExplicitStatus,
   getExplicitStatus,
   getStatusMap,
   setExplicitStatus,
@@ -9,9 +10,15 @@ import {
   getEntry,
   listProgressIds,
   mergeWatchedUpTo,
+  removeContinue,
   type ProgressEntry,
 } from './progress';
-import { addToWatchlist, inWatchlist, listWatchlistIds } from './watchlist';
+import {
+  addToWatchlist,
+  inWatchlist,
+  listWatchlistIds,
+  removeFromWatchlist,
+} from './watchlist';
 
 // Two-way AniList sync over the local stores. Reads/writes AniList directly via
 // fetch (no @animeflix/api runtime in the client bundle). Best-effort: every
@@ -27,6 +34,16 @@ import { addToWatchlist, inWatchlist, listWatchlistIds } from './watchlist';
 //   - dirty:      ids whose explicit status the user just changed → keep the
 //     local status over the remote one until the change is pushed (fixes e.g.
 //     setting "Plan to Watch" not sticking after a refresh).
+//   - seenRemote: ids present on AniList at the last COMPLETE pull. An id that
+//     has since vanished from a pull was deleted there (e.g. on the AniList
+//     site), so the local copy is removed too — otherwise the next push would
+//     see "local progress AniList doesn't have" and re-create (resurrect) the
+//     deleted entry. Ids with un-pushed local intent (dirty / tombstoned) are
+//     exempt: local still wins for the user's own in-app edits.
+//   - rewound:    ids the user explicitly rewound ("unwatch from here"). The
+//     one case a push may LOWER AniList progress (normal pushes only advance),
+//     and the pull skips its watched-backfill until the rewind lands so the
+//     un-marking can't be re-marked from the stale remote progress.
 // A progress advance still bumps the status forward only and never rewrites a
 // status it does not model (DROPPED / PAUSED / REPEATING).
 
@@ -48,6 +65,7 @@ const VIEWER_Q = /* GraphQL */ 'query { Viewer { id name avatar { medium } } }';
 const LIST_Q = /* GraphQL */ `
   query ($userId: Int!) {
     MediaListCollection(userId: $userId, type: ANIME) {
+      hasNextChunk
       lists {
         entries {
           id
@@ -137,8 +155,11 @@ const META_KEY = 'kessoku.anilist.sync.v1';
 interface SyncMeta {
   tombstones: Record<number, number>; // mediaId -> removedAt (pending delete)
   dirty: Record<number, number>; // mediaId -> changedAt (status pending push)
+  seenRemote: Record<number, number>; // mediaId -> lastSeenAt (on AniList at last complete pull)
+  seenRemoteUser?: number; // AniList user id seenRemote belongs to
+  rewound: Record<number, number>; // mediaId -> rewoundAt (progress downgrade pending push)
 }
-let meta: SyncMeta = { tombstones: {}, dirty: {} };
+let meta: SyncMeta = { tombstones: {}, dirty: {}, seenRemote: {}, rewound: {} };
 let metaLoaded = false;
 
 const loadMeta = (): void => {
@@ -151,6 +172,9 @@ const loadMeta = (): void => {
       meta = {
         tombstones: parsed.tombstones ?? {},
         dirty: parsed.dirty ?? {},
+        seenRemote: parsed.seenRemote ?? {},
+        seenRemoteUser: parsed.seenRemoteUser,
+        rewound: parsed.rewound ?? {},
       };
     }
   } catch {
@@ -234,6 +258,21 @@ export const noteLocalChange = (): void => {
   if (changed) saveMeta();
 };
 
+/**
+ * Record an explicit "unwatch from here" rewind so the sync honours it: the
+ * next push may LOWER this title's AniList progress (normal pushes only ever
+ * advance), and pulls stop backfilling watched marks from the stale remote
+ * progress until the rewind lands. An explicit COMPLETED status is downgraded
+ * to CURRENT, since "completed" can't be true of a rewound title (AniList
+ * force-bumps progress to the total on COMPLETED entries).
+ */
+export const noteProgressRewind = (id: number): void => {
+  loadMeta();
+  meta.rewound[id] = Date.now();
+  saveMeta();
+  if (getExplicitStatus(id) === 'COMPLETED') setExplicitStatus(id, 'CURRENT');
+};
+
 /** AniList "progress" = episodes completed. Highest watched, or mid-episode−1. */
 const aniListProgress = (e?: ProgressEntry): number => {
   if (!e) return 0;
@@ -278,6 +317,9 @@ interface ListEntry {
 }
 interface ListData {
   MediaListCollection?: {
+    // True when AniList chunked the response (very large lists): the pull is
+    // partial, so it must never be read as "everything else was deleted".
+    hasNextChunk?: boolean | null;
     lists?: ({ entries?: (ListEntry | null)[] | null } | null)[] | null;
   } | null;
 }
@@ -295,7 +337,10 @@ export const pullAndMerge = async (session: AniListSession): Promise<void> => {
   // (otherwise a network blip could be read as "AniList has nothing" and clear
   // pending deletes). An empty-but-present list is a real, successful pull.
   if (!data) return;
-  const lists = data.MediaListCollection?.lists ?? [];
+  const collection = data.MediaListCollection;
+  const lists = collection?.lists ?? [];
+  // Every id present in THIS pull, for the deletion reconcile below.
+  const pulled = new Set<number>();
 
   applyingRemote = true;
   try {
@@ -307,6 +352,7 @@ export const pullAndMerge = async (session: AniListSession): Promise<void> => {
         // needs the entry id to delete them).
         entryIdByMedia.set(m, e.id);
         knownRemote.add(m);
+        pulled.add(m);
         remoteProgress.set(m, e.progress ?? 0);
         const episodes = e.media?.episodes ?? undefined;
         if (episodes) totalByMedia.set(m, episodes);
@@ -320,7 +366,14 @@ export const pullAndMerge = async (session: AniListSession): Promise<void> => {
         // Mirror AniList's status locally UNLESS the user has an un-pushed local
         // status change for this title (then local wins until it's pushed).
         if (status && !meta.dirty[m]) setExplicitStatus(m, status);
-        if (typeof e.progress === 'number' && e.progress > 0) {
+        // A pending rewind makes local progress authoritative: skip the
+        // backfill so the un-marked episodes aren't re-marked from the stale
+        // remote progress before the lower number is pushed.
+        if (
+          typeof e.progress === 'number' &&
+          e.progress > 0 &&
+          !meta.rewound[m]
+        ) {
           // Carry AniList's real edit time so a pulled title sorts by when it
           // was actually watched, not the moment of the pull (which used to
           // stamp every synced entry as "just now" and flood Continue Watching).
@@ -328,6 +381,39 @@ export const pullAndMerge = async (session: AniListSession): Promise<void> => {
         }
       })
     );
+
+    // Mirror remote deletions: an id that was on AniList at the last complete
+    // pull but is missing from this one was deleted there (e.g. on the AniList
+    // site) → remove the local copy too, or the next push would re-create
+    // ("resurrect") it from stale local progress. Local intent still wins:
+    // dirty (un-pushed status change) and tombstoned (pending local delete)
+    // ids are left for the push to settle. Skipped entirely when AniList
+    // chunked the response — a partial pull is not a mass deletion. These
+    // writes run inside applyingRemote so they aren't diffed as user edits.
+    // A different AniList account invalidates the baseline: another user's
+    // list missing a title says nothing about THIS title being deleted.
+    if (meta.seenRemoteUser !== session.user.id) meta.seenRemote = {};
+    meta.seenRemoteUser = session.user.id;
+    if (!collection?.hasNextChunk) {
+      Object.keys(meta.seenRemote)
+        .map(Number)
+        .forEach((id) => {
+          if (pulled.has(id)) return;
+          delete meta.seenRemote[id]; // gone remotely, whatever the cause
+          if (meta.dirty[id] || meta.tombstones[id]) return;
+          removeFromWatchlist(id);
+          clearExplicitStatus(id);
+          removeContinue(id);
+          entryIdByMedia.delete(id);
+          knownRemote.delete(id);
+          remoteProgress.delete(id);
+          remoteStatus.delete(id);
+        });
+    }
+    pulled.forEach((id) => {
+      meta.seenRemote[id] = Date.now();
+    });
+    saveMeta();
   } finally {
     applyingRemote = false;
   }
@@ -354,6 +440,7 @@ const planPush = (
 
   const remoteSt = remoteStatus.get(id);
   const remoteProg = remoteProgress.get(id) ?? 0;
+  const rewound = meta.rewound[id] !== undefined;
   let status = remoteSt ?? progressStatus(id, progress);
   let changed = false;
 
@@ -373,9 +460,25 @@ const planPush = (
     ) {
       status = progressStatus(id, progress);
     }
+  } else if (rewound && progress < remoteProg) {
+    // Deliberate "unwatch from here": the one push allowed to LOWER progress.
+    // COMPLETED joins the recomputed states here (a rewound title isn't
+    // completed any more); DROPPED / PAUSED keep their status, just lower.
+    changed = true;
+    if (
+      !explicit &&
+      (remoteSt === undefined ||
+        remoteSt === 'PLANNING' ||
+        remoteSt === 'CURRENT' ||
+        remoteSt === 'COMPLETED')
+    ) {
+      status = progressStatus(id, progress);
+    }
   }
 
-  return changed ? { status, progress: Math.max(progress, remoteProg) } : null;
+  return changed
+    ? { status, progress: rewound ? progress : Math.max(progress, remoteProg) }
+    : null;
 };
 
 /**
@@ -393,6 +496,7 @@ export const pushChanges = async (session: AniListSession): Promise<void> => {
       ...watchlistIds,
       ...listProgressIds(),
       ...Object.keys(meta.dirty).map(Number),
+      ...Object.keys(meta.rewound).map(Number),
     ])
   );
 
@@ -433,6 +537,13 @@ export const pushChanges = async (session: AniListSession): Promise<void> => {
     // protected from the next pull and is retried on the following sync.
     if (ok && meta.dirty[id] !== undefined) {
       delete meta.dirty[id];
+      metaChanged = true;
+    }
+    // Same lifecycle for a rewind: cleared once the lower progress landed (or
+    // there was nothing to send), kept for retry on failure so the pull keeps
+    // skipping its backfill in the meantime.
+    if (ok && meta.rewound[id] !== undefined) {
+      delete meta.rewound[id];
       metaChanged = true;
     }
   }

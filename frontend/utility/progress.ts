@@ -135,11 +135,46 @@ export function unmarkWatched(id: number, ep: number): void {
   store.update((prev) => {
     const cur = prev[id];
     if (!cur) return prev;
+    const watched = cur.watched.filter((e) => e !== ep);
+    // Un-marking repudiates the episode, so the resume pointer (ep/sec — what
+    // "continue where you left off" shows) can't stay standing ahead of it:
+    // pull it back to just after the highest episode still marked. Fixes a
+    // background autoplay that marched to ep N — un-marking the eps drops the
+    // pointer back too instead of still resuming at ep N. The pointer never
+    // moves forward, and keeps its in-episode position when unaffected.
+    const maxWatched = watched.length ? Math.max(...watched) : 0;
+    const nextEp = Math.max(1, Math.min(cur.ep, maxWatched + 1));
     return {
       ...prev,
       [id]: {
         ...cur,
-        watched: cur.watched.filter((e) => e !== ep),
+        ep: nextEp,
+        sec: nextEp === cur.ep ? cur.sec : 0,
+        watched,
+        updatedAt: Date.now(),
+      },
+    };
+  });
+}
+
+/**
+ * Explicit rewind ("unwatch from here"): clear every mark from `ep` onward and
+ * pull the resume pointer back to `ep`, restarting it. Marks and any position
+ * below `ep` are untouched. Callers that sync should pair this with
+ * `noteProgressRewind()` so the lower progress also pushes to AniList.
+ */
+export function unwatchFrom(id: number, ep: number): void {
+  ensureMigrated();
+  store.update((prev) => {
+    const cur = prev[id];
+    if (!cur) return prev;
+    return {
+      ...prev,
+      [id]: {
+        ...cur,
+        ep: Math.max(1, Math.min(cur.ep, ep)),
+        sec: cur.ep >= ep ? 0 : cur.sec,
+        watched: cur.watched.filter((e) => e < ep),
         updatedAt: Date.now(),
       },
     };
