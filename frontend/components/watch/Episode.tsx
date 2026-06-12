@@ -1,12 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 import type { FillerKind } from '@animeflix/api';
-import { CheckCircleIcon } from '@heroicons/react/solid';
+import { CheckCircleIcon, RewindIcon } from '@heroicons/react/solid';
 
 import useWatchedEpisodes from '@hooks/useWatchedEpisodes';
 import { setEpisode } from '@slices/episode';
 import { useDispatch, useSelector } from '@store/store';
-import { markWatched, unmarkWatched } from '@utility/progress';
+import { noteProgressRewind } from '@utility/anilistSync';
+import {
+  getEntry,
+  markWatched,
+  unmarkWatched,
+  unwatchFrom,
+} from '@utility/progress';
 
 // Only the "notable" kinds get a marker bar; the canon majority stays unmarked
 // so filler/mixed actually stand out at a glance.
@@ -90,16 +96,52 @@ const Episode: React.FC<EpisodeProps> = ({ title, altTitle }) => {
   // Live set of episodes the viewer has finished (or hand-marked).
   const watched = new Set(useWatchedEpisodes(animeId));
 
+  // Context menu (right-click / long-press an episode tile): single-episode
+  // mark toggle + "unwatch from here" rewind. Fixed-positioned at the press
+  // point, clamped to the viewport, dismissed by outside press or Escape.
+  const [menu, setMenu] = useState<{ ep: number; x: number; y: number } | null>(
+    null
+  );
+  const closeMenu = () => setMenu(null);
+  const firstItemRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!menu) return undefined;
+    firstItemRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMenu();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menu]);
+
   // Toggle a single episode's watched state. Auto-set when the player nears the
-  // end of an episode; this is the manual override (long-press / right-click).
+  // end of an episode; this is the manual override (via the context menu).
   const toggle = (v: number) => {
     if (watched.has(v)) unmarkWatched(animeId, v);
     else markWatched(animeId, v, { total: episodes });
   };
 
-  // ~500ms press-and-hold to toggle watched, the touch-friendly twin of the
-  // right-click menu. Cancelled if the finger lifts, leaves, or drifts.
+  // Explicit rewind: clear marks from `v` onward, pull the resume pointer back
+  // to `v`, and let the sync push the LOWER progress to AniList once.
+  const rewindFrom = (v: number) => {
+    unwatchFrom(animeId, v);
+    noteProgressRewind(animeId);
+  };
+
+  const openMenu = (v: number, x: number, y: number) => {
+    // Clamp so the panel never renders off-screen (est. 232x132 panel).
+    const cx = Math.min(Math.max(8, x), window.innerWidth - 240);
+    const cy = Math.min(Math.max(8, y), window.innerHeight - 140);
+    setMenu({ ep: v, x: cx, y: cy });
+  };
+
+  // ~500ms press-and-hold to open the menu, the touch-friendly twin of the
+  // right-click. Cancelled if the finger lifts, leaves, or drifts.
   const pressTimer = useRef<ReturnType<typeof setTimeout>>();
+  const pressPoint = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Eat the click that follows a long-press, so opening the menu by holding a
+  // tile doesn't also navigate to that episode underneath it.
+  const suppressClick = useRef(false);
   const clearPress = () => {
     if (pressTimer.current) {
       clearTimeout(pressTimer.current);
@@ -139,6 +181,15 @@ const Episode: React.FC<EpisodeProps> = ({ title, altTitle }) => {
   const pages = Math.ceil(episodes / 100);
   const episodeArray = Array.from({ length: episodes }, (_, i) => i + 1);
 
+  // "Unwatch from here" only shows when it would do something: a mark at or
+  // past this episode, or the resume pointer standing at/after it.
+  const menuEntry = menu ? getEntry(animeId) : undefined;
+  const canRewind =
+    menu !== null &&
+    (Array.from(watched).some((e) => e >= menu.ep) ||
+      (menuEntry?.ep ?? 0) > menu.ep ||
+      ((menuEntry?.ep ?? 0) === menu.ep && (menuEntry?.sec ?? 0) > 0));
+
   if (!episodes) {
     return (
       <div className="mt-6">
@@ -173,7 +224,7 @@ const Episode: React.FC<EpisodeProps> = ({ title, altTitle }) => {
       )}
 
       <p className="mb-3 text-xs text-faint">
-        Long-press or right-click an episode to mark it watched.
+        Long-press or right-click an episode to mark watched or rewind.
       </p>
 
       {pages > 1 && (
@@ -204,20 +255,31 @@ const Episode: React.FC<EpisodeProps> = ({ title, altTitle }) => {
             } else if (isWatchedEp) {
               epTitle = 'Watched';
             }
-            const startPress = () => {
+            const startPress = (e: React.PointerEvent) => {
               clearPress();
+              // A new gesture: any click belonging to the previous one has
+              // already fired, so a stale suppress flag must not eat this tap.
+              suppressClick.current = false;
+              pressPoint.current = { x: e.clientX, y: e.clientY };
               pressTimer.current = setTimeout(() => {
                 clearPress();
-                toggle(v);
+                suppressClick.current = true;
+                openMenu(v, pressPoint.current.x, pressPoint.current.y);
               }, 500);
             };
             return (
               <button
                 key={v}
-                onClick={() => dispatch(setEpisode(v))}
+                onClick={() => {
+                  if (suppressClick.current) {
+                    suppressClick.current = false;
+                    return;
+                  }
+                  dispatch(setEpisode(v));
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  toggle(v);
+                  openMenu(v, e.clientX, e.clientY);
                 }}
                 onPointerDown={startPress}
                 onPointerUp={clearPress}
@@ -252,6 +314,73 @@ const Episode: React.FC<EpisodeProps> = ({ title, altTitle }) => {
             );
           })}
       </div>
+
+      {menu && (
+        <>
+          {/* Invisible scrim: catches the outside press / stray right-click /
+              scroll and closes the menu, standard context-menu behavior. */}
+          <div
+            className="fixed inset-0 z-40"
+            aria-hidden
+            onPointerDown={closeMenu}
+            onWheel={closeMenu}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              closeMenu();
+            }}
+          />
+          <div
+            role="menu"
+            aria-label={`Episode ${menu.ep} watched controls`}
+            className="fixed z-50 w-56 rounded-xl border border-line/70 bg-canvas-2 p-1.5 shadow-card"
+            style={{ left: menu.x, top: menu.y }}
+          >
+            <p className="px-2.5 pb-1 pt-1 text-xs font-semibold text-faint">
+              Episode {menu.ep}
+            </p>
+            <button
+              ref={firstItemRef}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                toggle(menu.ep);
+                closeMenu();
+              }}
+              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-muted transition hover:bg-fg/5 hover:text-fg"
+            >
+              <CheckCircleIcon
+                className={`h-4 w-4 shrink-0 ${
+                  watched.has(menu.ep) ? 'text-accent' : 'text-faint'
+                }`}
+                aria-hidden
+              />
+              {watched.has(menu.ep) ? 'Unmark watched' : 'Mark watched'}
+            </button>
+            {canRewind && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  rewindFrom(menu.ep);
+                  closeMenu();
+                }}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-muted transition hover:bg-fg/5 hover:text-fg"
+              >
+                <RewindIcon
+                  className="h-4 w-4 shrink-0 text-faint"
+                  aria-hidden
+                />
+                <span className="flex flex-col">
+                  <span>Unwatch from here</span>
+                  <span className="text-xs text-faint">
+                    Clears ep {menu.ep} to {episodes} and rewinds
+                  </span>
+                </span>
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 };
