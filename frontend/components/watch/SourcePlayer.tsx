@@ -121,6 +121,12 @@ const SourcePlayer: React.FC<{
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 90000);
+    // Set when a newer resolve supersedes this one (episode/dub/server changed,
+    // or the saved server pref hydrates right after mount and re-runs the
+    // effect). A superseded attempt must not touch state: its abort lands in
+    // .catch, which used to stomp the new attempt's 'loading' with 'embed' —
+    // the page looked like it gave up on our server the instant it opened.
+    let superseded = false;
     const category = useDub ? 'dub' : 'sub';
     const url =
       `${SOURCE_SERVICE}/watch?anilistId=${animeId}&episode=${episode}` +
@@ -131,6 +137,7 @@ const SourcePlayer: React.FC<{
     fetch(url, { signal: controller.signal })
       .then((r) => r.json() as Promise<WatchResponse>)
       .then((data) => {
+        if (superseded) return;
         if (data.mode === 'direct' && data.sources && data.sources.length > 0) {
           setSources(data.sources);
           setSubtitles(data.subtitles || []);
@@ -140,10 +147,15 @@ const SourcePlayer: React.FC<{
           setPhase('embed');
         }
       })
-      .catch(() => setPhase('embed'))
+      .catch(() => {
+        // Real failures (service down, 90s timeout) fall back to embed; a
+        // superseded attempt stays silent and lets the newer one decide.
+        if (!superseded) setPhase('embed');
+      })
       .finally(() => clearTimeout(timer));
 
     return () => {
+      superseded = true;
       clearTimeout(timer);
       controller.abort();
     };
