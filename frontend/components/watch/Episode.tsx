@@ -284,10 +284,26 @@ const Episode: React.FC<EpisodeProps> = ({ title, altTitle }) => {
                 onPointerDown={startPress}
                 onPointerUp={clearPress}
                 onPointerLeave={clearPress}
-                onPointerMove={clearPress}
+                // A held finger always jitters a little; only treat real drift
+                // (past ~10px) as "moved away" so the hold isn't cancelled the
+                // instant a thumb shifts on a touchscreen.
+                onPointerMove={(e) => {
+                  if (!pressTimer.current) return;
+                  const dx = e.clientX - pressPoint.current.x;
+                  const dy = e.clientY - pressPoint.current.y;
+                  if (dx * dx + dy * dy > 100) clearPress();
+                }}
                 aria-current={isCurrent}
                 title={epTitle}
-                className={`relative flex h-10 items-center justify-center rounded-md text-sm tabular-nums transition duration-150 active:scale-95 ${
+                // iOS Safari fires its own text-selection + magnifier on a
+                // long-press, fighting our mark-watched menu. Kill the native
+                // callout/selection so the hold opens only our panel.
+                style={{
+                  WebkitTouchCallout: 'none',
+                  WebkitUserSelect: 'none',
+                  touchAction: 'manipulation',
+                }}
+                className={`relative flex h-10 select-none items-center justify-center rounded-md text-sm tabular-nums transition duration-150 active:scale-95 ${
                   isCurrent
                     ? 'bg-aurora font-semibold text-accent-ink shadow-glow'
                     : `bg-surface text-muted hover:bg-surface-2 hover:text-fg ${

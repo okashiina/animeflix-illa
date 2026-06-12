@@ -61,8 +61,11 @@ const Poster: React.FC<{ src: string }> = ({ src }) => (
 const PosterMarquee: React.FC<{
   covers: string[];
   reverse?: boolean;
-  reduced: boolean;
-}> = ({ covers, reverse, reduced }) => {
+  // Frozen (no scroll) on phones / reduced-motion: a full-width row of 16
+  // posters sliding forever is a big layer to composite every frame on a weak
+  // mobile GPU. Static, at 0.13 opacity behind the scrims, it reads the same.
+  frozen: boolean;
+}> = ({ covers, reverse, frozen }) => {
   if (covers.length === 0) return null;
   const row = [...covers, ...covers];
 
@@ -70,10 +73,10 @@ const PosterMarquee: React.FC<{
     <motion.div
       className="flex w-max gap-3"
       animate={
-        reduced ? undefined : { x: reverse ? ['-50%', '0%'] : ['0%', '-50%'] }
+        frozen ? undefined : { x: reverse ? ['-50%', '0%'] : ['0%', '-50%'] }
       }
       transition={
-        reduced ? undefined : { duration: 70, ease: 'linear', repeat: Infinity }
+        frozen ? undefined : { duration: 70, ease: 'linear', repeat: Infinity }
       }
     >
       {row.map((src, i) => (
@@ -461,8 +464,8 @@ const Hero: React.FC<{ covers: string[] }> = ({ covers }) => {
         {/* No blur filter here: a blur over the moving marquee re-rasterizes every
           frame. At 0.13 opacity behind the scrims it reads the same without it. */}
         <div className="absolute inset-0 flex flex-col justify-center gap-3 opacity-[0.13]">
-          <PosterMarquee covers={rowA} reduced={Boolean(reduced)} />
-          <PosterMarquee covers={rowB} reverse reduced={Boolean(reduced)} />
+          <PosterMarquee covers={rowA} frozen={lite} />
+          <PosterMarquee covers={rowB} reverse frozen={lite} />
         </div>
 
         {/* Stage-light glows. Translate-only drift (no scale) so the blurred
@@ -503,11 +506,9 @@ const Hero: React.FC<{ covers: string[] }> = ({ covers }) => {
               alt=""
               aria-hidden
               className="h-14 w-14 sm:h-16 sm:w-16"
-              animate={
-                reduced ? undefined : { y: [0, -8, 0], rotate: [0, -3, 0] }
-              }
+              animate={lite ? undefined : { y: [0, -8, 0], rotate: [0, -3, 0] }}
               transition={
-                reduced
+                lite
                   ? undefined
                   : { duration: 5, repeat: Infinity, ease: 'easeInOut' }
               }

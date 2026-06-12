@@ -908,9 +908,25 @@ const HlsPlayer: React.FC<HlsPlayerProps> = ({
     v.currentTime = Math.min(Math.max(v.currentTime + d, 0), v.duration || 0);
   }, []);
   const toggleFs = useCallback(() => {
-    if (document.fullscreenElement)
+    if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => undefined);
-    else stageRef.current?.requestFullscreen().catch(() => undefined);
+      return;
+    }
+    const stage = stageRef.current;
+    // Standard Fullscreen API — desktop + Android (and iPad). On iPhone, Safari
+    // doesn't implement requestFullscreen on arbitrary elements, so this call
+    // is simply absent on our <div> stage and the button used to do nothing.
+    if (stage?.requestFullscreen) {
+      stage.requestFullscreen().catch(() => undefined);
+      return;
+    }
+    // iPhone fallback: only the <video> itself can go fullscreen, via the
+    // webkit-prefixed call. Native iOS controls take over here, so the
+    // companion dock isn't available — but the video actually fills the screen.
+    const v = videoRef.current as
+      | (HTMLVideoElement & { webkitEnterFullscreen?: () => void })
+      | null;
+    v?.webkitEnterFullscreen?.();
   }, []);
   const togglePip = useCallback(async () => {
     const v = videoRef.current;
