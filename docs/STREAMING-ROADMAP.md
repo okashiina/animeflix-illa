@@ -391,6 +391,41 @@ renders, 0 console errors) done — the fullscreen companion dock still wants a 
   Railway deploy the companion needs `COMPANION_API_KEY` set to be live, and the per-scene player
   features are fullest on the direct/source-service player.
 
+### 8c. Player-first fix (2026-06-12, code-complete, not yet merged)
+
+- **SourcePlayer superseded-resolve race** — opening an episode fired `resolve()`, then the
+  saved server pref (`kessoku.source.provider`) hydrated from localStorage and re-ran the
+  effect; the aborted first fetch's `.catch` set `phase='embed'`, stomping the new attempt's
+  `'loading'`. The page looked like it instantly gave up on our server and needed a manual
+  "↺ Try our server" click on every open. A superseded attempt is now silent (only real
+  failures and the 90s timeout fall back to embed), so the direct pipeline is genuinely
+  attempted first. (`frontend/components/watch/SourcePlayer.tsx`)
+- **AniList deleted-entry resurrection** — deleting a title on the AniList *site* didn't
+  remove the local copy, so the next push saw "local progress AniList doesn't have" and
+  re-created the entry (CURRENT/COMPLETED). `anilistSync.ts` now persists `seenRemote`
+  (ids present at the last complete pull) in `kessoku.anilist.sync.v1`; an id missing from
+  a later complete pull is mirrored as a local removal (watchlist + progress + status).
+  Local intent still wins (dirty / tombstoned ids exempt), and a chunked (`hasNextChunk`)
+  pull never reconciles, so a partial response can't read as mass deletion. Companion
+  model also bumped to `gemini-3.5-flash` (env-only; Railway `COMPANION_MODEL` updated).
+- **Un-marking episodes didn't move the resume pointer** — `unmarkWatched()` only edited
+  the `watched[]` array; `ep`/`sec` (what "continue where you left off" reads) stayed
+  parked, so a background autoplay that marched to ep 11 still resumed at ep 11 after the
+  user un-marked eps 2-11. The pointer now pulls back to just after the highest episode
+  still marked (never forward; in-episode position kept when unaffected), and an entry
+  left with no marks and no position drops off the Continue Watching rail entirely.
+  (`frontend/utility/progress.ts`)
+- **"Unwatch from here" rewind (context menu)** — right-click / long-press on an episode
+  tile now opens a small menu (Midnight-Aurora tokens, viewport-clamped, Escape/outside
+  dismiss) with the single-episode mark toggle plus an explicit rewind: `unwatchFrom()`
+  clears marks from ep N onward and restarts the pointer at N, and `noteProgressRewind()`
+  records the one case a push may LOWER AniList progress (normal pushes stay advance-only;
+  an explicit COMPLETED downgrades to CURRENT since AniList force-bumps completed entries).
+  Pulls skip the watched-backfill for a pending rewind so stale remote progress can't
+  re-mark the cleared episodes — previously a mid-series unmark silently came back on the
+  next session for logged-in users. (`Episode.tsx`, `progress.ts`, `anilistSync.ts`;
+  designed with the `impeccable` skill, product register)
+
 ## 9. Local host runbook (laptop) + VPS migration off-ramp
 
 The Option B stack runs via Docker Compose in `services/source-service/`
